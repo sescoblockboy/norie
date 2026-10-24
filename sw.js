@@ -1,6 +1,5 @@
-/* Norie service worker: network-first everywhere so updates & inputs never break */
-const CACHE = 'norie-v10';
-const SHELL = ['./', './index.html', './manifest.json?v=10', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
+const CACHE = 'norie-v12';
+const SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
