@@ -70,6 +70,12 @@ h2.over{color:var(--pink)}
 .row.done .m{display:none} 
 .row.done+.row::before{left:42px}
 .row.lk .chk{opacity:.4}
+details.setrow{margin-top:10px;padding:14px 16px}
+details.setrow summary b{font-size:16px}
+.stb{margin-left:auto;margin-right:8px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px;background:rgba(255,255,255,.75);color:var(--muted);white-space:nowrap}
+.stb.ok{color:#2f9e6a}.stb.no{color:var(--pink)}
+.steps{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.55}
+.hl{padding:12px 14px;margin:10px 0 0;border-radius:14px;background:rgba(255,255,255,.7);font-size:14px;line-height:1.45}
 
 /* ---- Today: super compact, single-line rows ---- */
 .cmp .hi{margin:0 2px;font-size:12.5px}
@@ -107,8 +113,8 @@ h2.over{color:var(--pink)}
 .fab:active{transform:scale(.94)}
 #shade{position:fixed;inset:0;background:rgba(80,40,50,.28);z-index:30;opacity:0;pointer-events:none;transition:opacity .25s}
 #shade.on{opacity:1;pointer-events:auto}
-#sheet{position:fixed;left:0;right:0;margin:0 auto;bottom:-105%;width:min(680px,100%);max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:31;padding:18px 18px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.98);pointer-events:none;transition:bottom .28s cubic-bezier(.2,.9,.25,1)}
-#sheet.on{bottom:0;pointer-events:auto}
+#sheet{position:fixed;left:0;right:0;margin:0 auto;bottom:0;transform:translate3d(0,105%,0);will-change:transform;width:min(680px,100%);max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:31;padding:18px 18px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.98);pointer-events:none;box-shadow:0 -10px 34px rgba(120,60,70,.18);transition:transform .28s cubic-bezier(.2,.9,.25,1)}
+#sheet.on{transform:translate3d(0,0,0);pointer-events:auto}
 #sheet .grab{width:42px;height:5px;border-radius:5px;background:rgba(120,90,90,.25);margin:0 auto 14px}
 .sh-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sh-top b{font-size:22px}
@@ -308,7 +314,8 @@ function mergeStates(a,b){
 }
 const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{}]);
 
-let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle',calMsg=null;
+let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle',calMsg=(()=>{try{return localStorage.getItem('petal.cal')}catch(_){return null}})();
+const setCal=v=>{calMsg=v;try{v==null?localStorage.removeItem('petal.cal'):localStorage.setItem('petal.cal',v)}catch(_){}};
 function calNote(){if(calMsg==null)return'';if(calMsg==='ok')return' · Calendar ✓';if(calMsg==='old')return' · ⚠️ paste the new Code.gs for calendar';return' · ⚠️ Calendar: '+String(calMsg).slice(0,90)}
 function syncLabel(){
   if(!hasCloud())return'Not connected — paste your URL above';
@@ -317,7 +324,15 @@ function syncLabel(){
   if(isDirty())return'Saving to cloud…';
   return (lastSyncOk?'Synced automatically ✓ '+fmtT(lastSyncOk):'Connecting…')+calNote();
 }
-function paintSync(){const el=document.getElementById('gasstat');if(el){el.className='status ok';el.textContent=syncLabel()}}
+function badge(id,txt,ok){const el=document.getElementById(id);if(el){el.textContent=txt;el.className='stb '+(ok===true?'ok':ok===false?'no':'')}}
+function updateBadges(){
+  const cloud=!hasCloud()?['Not set',false]:syncState==='busy'?['Syncing…',null]:(syncState==='err'||!navigator.onLine)?['Offline',null]:['Connected ✓',true];
+  badge('st_cloud',cloud[0],cloud[1]);
+  const c=!hasCloud()?['Needs Cloud',false]:calMsg==null?['Not checked',null]:calMsg==='ok'?['Connected ✓',true]:calMsg==='old'?['Update Code.gs',false]:['Problem',false];
+  badge('st_cal',c[0],c[1]);
+  const tg=S.settings.tgToken&&S.settings.tgChat;badge('st_tg',tg?'Set ✓':'Not set',tg?true:null);
+}
+function paintSync(){const el=document.getElementById('gasstat');if(el){el.className='status ok';el.textContent=syncLabel()}updateBadges()}
 async function gasCall(body){
   const url=(S.settings.gasUrl||'').trim();
   if(!url||!navigator.onLine)throw new Error('off');
@@ -340,7 +355,7 @@ async function syncToGas(){
     const r=await gasCall({action:'save',payload:S,base:getCloudAt()});
     if(r&&r.status==='stale')stale=true;
     else if(r&&r.status==='error')throw new Error('srv');
-    else{setCloudAt(sent);if(S.updatedAt===sent)setDirty(false);syncState='ok';lastSyncOk=Date.now();calMsg=(r&&r.cal!==undefined)?r.cal:'old'}
+    else{setCloudAt(sent);if(S.updatedAt===sent)setDirty(false);syncState='ok';lastSyncOk=Date.now();setCal((r&&r.cal!==undefined)?r.cal:'old')}
   }catch(_){syncState='err'}
   syncBusy=false;paintSync();
   if(stale){syncState='ok';await loadFromGas(true);return true}
@@ -829,50 +844,68 @@ function vLists(){
 const swHTML=(id,on)=>`<label class="sw"><input type="checkbox" id="${id}" ${on?'checked':''}><i></i></label>`;
 function vSettings(){
   const st=S.settings,av=st.avatar,np='Notification' in window?Notification.permission:'unsupported';
-  return `<h1>Settings</h1><p class="sub">Make Norie yours</p>
-  <div class="glass setrow"><b>👤 About you</b>
-   <label>Your name (used as Cloud Sync ID)</label><input id="s_name" value="${esc(st.name)}" placeholder="Your name" autocomplete="off">
-   <label>Avatar</label>
-   <div class="chips">${[['robot','🤖 Norie'],['emoji','😊 Emoji'],['photo','🖼️ Photo / Memoji']].map(([k,n])=>`<button class="chip ${av.type===k?'on':''}" data-av="${k}">${n}</button>`).join('')}</div>
-   ${av.type==='robot'?'<p>Norie says hi whenever you open the app.</p>':''}${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
-     <input id="s_emoji" value="${esc(av.emoji)}" maxlength="6" placeholder="…or paste any emoji" style="font-size:26px;text-align:center">`:''}
-   ${av.type==='photo'?`<div class="btns" style="margin-top:4px"><button class="btn small" id="av_pick">Choose image…</button></div><input type="file" id="av_file" accept="image/*" hidden>`:''}
-   <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Norie</span>${swHTML('s_greet',st.greet)}</div>
-  </div>
+  const standalone=window.navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+  return `<h1>Settings</h1><p class="sub">Tap a section to open it</p>
 
-  <details class="glass setrow" style="margin-top:12px" ${st.gasUrl?'':'open'}>
-   <summary><b>☁️ Cloud Sync (automatic)</b></summary>
+  <details class="glass setrow" ${hasCloud()?'':'open'}>
+   <summary><b>☁️ Cloud Sync</b><span class="stb" id="st_cloud"></span></summary>
    <div class="setwrap">
-     <p>Paste your Apps Script Web App URL once. Changes upload and download by themselves — no buttons. Use the same <b>Your name</b> on every device.</p>
+     <p>Paste your Web App URL once. Everything saves on this phone first and uploads by itself when you're online.</p>
      <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
      <div class="status ok" id="gasstat">${esc(syncLabel())}</div>
    </div>
   </details>
 
-  <details class="glass setrow" style="margin-top:12px">
-   <summary><b>✈️ Telegram Reminders (free)</b></summary>
+  <details class="glass setrow">
+   <summary><b>📅 Calendar alarms</b><span class="stb" id="st_cal"></span></summary>
    <div class="setwrap">
-     <p>With Cloud Sync on, reminders are sent by the cloud even when your phone is locked and Norie is closed.</p>
+     <p>Your tasks are added to your Google Calendar automatically, so the alarm still rings when your phone is offline.</p>
+     <div class="btns" style="margin-top:12px"><button class="btn main small" id="caltest">Test calendar now</button></div>
+     <div class="hl" id="calstat">${calMsg==='ok'?'✅ Connected. Tasks with a time appear in your calendar.':calMsg&&calMsg!=='old'?'⚠️ '+esc(String(calMsg).slice(0,160)):'Not checked yet — tap the button.'}</div>
+     <ol class="steps"><li>The test adds a “🔔 Norie test” event 2 minutes from now.</li><li>Open Calendar on your phone and look for it.</li></ol>
+   </div>
+  </details>
+
+  <details class="glass setrow">
+   <summary><b>✈️ Telegram</b><span class="stb" id="st_tg"></span></summary>
+   <div class="setwrap">
+     <p>With Cloud Sync on, Telegram reminders keep coming even when Norie is closed.</p>
      <label>Bot token</label><input id="tgt" value="${esc(st.tgToken)}" placeholder="123456:ABC-DEF..." autocomplete="off">
      <label>Chat ID</label><input id="tgc" value="${esc(st.tgChat)}" placeholder="123456789" inputmode="numeric">
      <div class="btns"><button class="btn main small" id="tgsave">Save &amp; send test</button></div><div class="status" id="tgstat"></div>
    </div>
   </details>
 
-  <div class="glass setrow" style="margin-top:12px"><b>📅 Calendar</b>
-   <div class="grow" style="padding:10px 0 0;min-height:0"><span>Auto-add tasks that have a time</span>${swHTML('s_cal',st.autoCal)}</div>
-   <p>Gives you an alert from your phone’s own Calendar even when Norie is closed or offline.</p></div>
+  <details class="glass setrow">
+   <summary><b>🔔 Alerts on this phone</b><span class="stb ${np==='granted'?'ok':'no'}">${np==='granted'?'On ✓':'Off'}</span></summary>
+   <div class="setwrap">
+     <div class="btns" style="margin-top:0"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div>
+     <div class="hl" id="notstat">${np==='granted'?'Enabled ✓ — tap Test, then lock your phone.':np==='denied'?'Blocked — allow notifications for Norie in iPhone Settings.':!standalone&&isIOS?'On iPhone: tap Share → Add to Home Screen, open Norie from there, then tap Enable.':'Tap Enable to allow notifications.'}</div>
+     <label>Nag me again every</label>
+     <select id="nag">${[[0,'Don’t repeat'],[5,'5 minutes'],[10,'10 minutes'],[30,'30 minutes'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${st.nag===v?'selected':''}>${n}</option>`).join('')}</select>
+     <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Play a soft chime</span>${swHTML('snd',st.sound)}</div>
+   </div>
+  </details>
 
-  <div class="glass setrow" style="margin-top:12px"><b>🔔 Notifications</b>
-   <div class="status ${np==='granted'?'ok':'no'}">${np==='granted'?'Enabled ✓':np==='denied'?'Blocked — check browser settings':'Not enabled yet'}</div>
-   <div class="btns" style="margin-top:12px"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div></div>
+  <details class="glass setrow">
+   <summary><b>👤 Profile</b></summary>
+   <div class="setwrap">
+     <label>Your name (also your sync ID)</label><input id="s_name" value="${esc(st.name)}" placeholder="Your name" autocomplete="off">
+     <label>Avatar</label>
+     <div class="chips">${[['robot','🤖 Norie'],['emoji','😊 Emoji'],['photo','🖼️ Photo']].map(([k,n])=>`<button class="chip ${av.type===k?'on':''}" data-av="${k}">${n}</button>`).join('')}</div>
+     ${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
+       <input id="s_emoji" value="${esc(av.emoji)}" maxlength="6" placeholder="…or paste any emoji" style="font-size:26px;text-align:center">`:''}
+     ${av.type==='photo'?`<div class="btns" style="margin-top:4px"><button class="btn small" id="av_pick">Choose image…</button></div><input type="file" id="av_file" accept="image/*" hidden>`:''}
+     <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Greet me when I open Norie</span>${swHTML('s_greet',st.greet)}</div>
+   </div>
+  </details>
 
-  <div class="glass setrow" style="margin-top:12px"><b>🔁 Keep reminding me</b><p>When a reminder is missed, nag again every…</p>
-   <select id="nag" style="margin-top:10px">${[[0,'Don’t repeat'],[5,'5 minutes'],[10,'10 minutes'],[30,'30 minutes'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${st.nag===v?'selected':''}>${n}</option>`).join('')}</select>
-   <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Play a soft chime</span>${swHTML('snd',st.sound)}</div></div>
-
-  <div class="glass setrow" style="margin-top:12px"><b>💾 Backup</b><p>Export local backup file.</p>
-   <div class="btns" style="margin-top:12px"><button class="btn small" id="exp">Export</button><button class="btn small" id="imp">Import</button></div><input type="file" id="impf" accept=".json" hidden></div>`;
+  <details class="glass setrow">
+   <summary><b>💾 Backup</b></summary>
+   <div class="setwrap">
+     <div class="btns" style="margin-top:0"><button class="btn small" id="exp">Export</button><button class="btn small" id="imp">Import</button></div><input type="file" id="impf" accept=".json" hidden>
+   </div>
+  </details>`;
 }
 function render(){
   bar();
@@ -880,6 +913,7 @@ function render(){
   $('#app').innerHTML={today:vToday,upcoming:vUpcoming,lists:vLists,settings:vSettings}[tab]();
   $('#fab').style.display=tab==='settings'?'none':'block';
   if(typeof syncNorie==='function')syncNorie();
+  if(tab==='settings')updateBadges();
 }
 
 /* ---------- interactions ---------- */
@@ -895,9 +929,38 @@ $('#app').addEventListener('click',async e=>{
   if(T.id==='av_pick'){$('#av_file').click();return}
   if(T.id==='newlist'){const n=prompt('List name?');if(n){const em=prompt('Emoji?','✨')||'✨';S.lists.push({id:uid(),name:n.trim(),e:em.trim().slice(0,4)});save();render()}return}
   const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list?')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
-  if(T.id==='askperm'){await Notification.requestPermission();render();return}
-  if(T.id==='testn'){await sysNotify('Norie 🤖','Notifications working!','test');beep();toast({id:'x'},{title:'Test',body:'Reminders look like this.'});return}
-  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🤖 Hi ${myName()}, it’s Norie! Connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';return}
+  if(T.id==='askperm'){
+    if(!('Notification' in window)){const n=$('#notstat');if(n)n.textContent='Not available here. On iPhone: Share → Add to Home Screen, then open Norie from the Home Screen.';return}
+    try{await Notification.requestPermission()}catch(_){}
+    render();return;
+  }
+  if(T.id==='testn'){
+    const n=$('#notstat');
+    if(!('Notification' in window)){if(n)n.textContent='Not available here. On iPhone: Share → Add to Home Screen, then open Norie from there.';return}
+    if(Notification.permission!=='granted'){if(n)n.textContent='Notifications are off — tap Enable first.';return}
+    await sysNotify('Norie 🤖','Notifications working!','test');beep();
+    if(n)n.textContent='✅ Sent. If you saw nothing, check iPhone Settings → Notifications → Norie.';
+    flash('Test notification sent');return;
+  }
+  if(T.id==='caltest'){
+    const out=$('#calstat');
+    if(!hasCloud()){out.textContent='Set up Cloud Sync first (paste your Web App URL).';return}
+    if(!navigator.onLine){out.textContent='You are offline — try again when connected.';return}
+    out.textContent='Checking…';
+    try{
+      const r=await gasCall({action:'testcal'});
+      if(r&&r.cal==='ok'){
+        setCal('ok');updateBadges();
+        out.textContent=`✅ Connected to “${r.calName||'your calendar'}”${r.owner?' ('+r.owner+')':''}. A “🔔 Norie test” event is set for ${fmtT(r.at)} — open Calendar on your phone to see it.`;
+      }else if(r&&r.status==='error'){
+        setCal('old');updateBadges();out.textContent='⚠️ Your cloud script is old. Paste the newest Code.gs, deploy a New version, then test again.';
+      }else{
+        setCal(String((r&&r.cal)||'unknown error'));updateBadges();out.textContent='⚠️ '+String((r&&r.cal)||'unknown error').slice(0,200)+' — in Apps Script run authorize() and accept the Calendar permission, then deploy a New version.';
+      }
+    }catch(_){out.textContent='Could not reach your cloud script. Check the URL and your internet.'}
+    return;
+  }
+  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🤖 Hi ${myName()}, it’s Norie! Connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';updateBadges();return}
   if(T.id==='exp'){download('norie-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,1),'application/json');return}
   if(T.id==='imp'){$('#impf').click();return}
 });
@@ -934,7 +997,7 @@ function sumUpdate(){
   if(draft.due){el.className='dv on';el.textContent=dayLabel(draft.due)+', '+fmtT(draft.due)}
   else{el.className='dv ph';el.textContent='Today · '+new Date().toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})}
   $('#f_clr').hidden=!draft.due;
-  $('#f_cal').textContent=draft.due?(S.settings.autoCal?'📅 Added to Calendar':''):'No reminder yet';
+  $('#f_cal').textContent=draft.due?(hasCloud()?'📅 Synced to your calendar':''):'No reminder yet';
 }
 let calY=0,calM=0;
 function defTime(){const d=new Date();d.setMinutes(0,0,0);d.setHours(d.getHours()+1);return d}
@@ -988,7 +1051,8 @@ function openSheet(t){
   <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
   ${t?`<div class="btns"><button class="btn small gold" id="f_ics">📅 Add to Calendar</button><button class="btn small danger" id="f_del">Delete</button></div>`:''}`;
   sumUpdate();
-  $('#sheet').classList.add('on');$('#shade').classList.add('on');
+  NR.sheetT=performance.now();
+  requestAnimationFrame(()=>{$('#sheet').classList.add('on');$('#shade').classList.add('on')});
 }
 $('#sheet').addEventListener('click',e=>{
   const T=e.target;
@@ -1035,7 +1099,6 @@ function saveSheet(){
     S.tasks.push(task);dueChanged=true;
   }
   save();closeSheet();render();
-  if(due&&S.settings.autoCal&&dueChanged)addToCalendar(task);
 }
 
 /* ---------- norie animation & engine ---------- */
@@ -1272,7 +1335,8 @@ function nFrame(now){
   }
   const hello=(nHello||(nHello=$('#hello'))).classList.contains('on');
   /* face/eyes/mouth are redrawn ~30x per second (movement itself still runs every frame) – big battery & lag saver */
-  if((on||hello)&&now-nStepT>=28){
+  const sOpen=document.getElementById('sheet').classList.contains('on');
+  if((on||hello)&&now-nStepT>=(sOpen?110:28)&&!(sOpen&&now-(NR.sheetT||0)<420)){
     const sdt=Math.min(.05,Math.max(.001,(now-nStepT)/1000));nStepT=now;
     getRbts().forEach(r=>{
       if(r.closest('#hello')){if(!hello)return}
