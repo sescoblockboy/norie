@@ -41,7 +41,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;tr
   box-shadow:0 10px 32px rgba(200,150,46,.14), 0 2px 8px rgba(244,104,127,.08), inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(255,255,255,.3);
   border-radius:var(--r);
 }
-.bar.glass,.toast.glass,#sheet.glass{-webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%)}
+.bar.glass,.toast.glass,#sheet.glass{-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
 .bar.glass{background:var(--glass)}
 #sheet .glass{background:var(--glass)}
 #app{max-width:680px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 120px)}
@@ -77,7 +77,6 @@ h2.over{color:var(--pink)}
 .bar button.on{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,232,236,.8));color:var(--pink);box-shadow:0 4px 14px rgba(244,104,127,.22), inset 0 1px 0 #fff}
 .fab{position:fixed;right:max(18px,calc(50% - 322px));bottom:calc(env(safe-area-inset-bottom) + 98px);width:60px;height:60px;border-radius:50%;border:0;z-index:21;font-size:34px;color:#fff;cursor:pointer;background:linear-gradient(145deg,#ff9aab,var(--pink) 55%,#ea4a66);box-shadow:0 12px 28px rgba(244,104,127,.5), inset 0 2px 0 rgba(255,255,255,.55);line-height:1;padding-bottom:4px}
 .fab:active{transform:scale(.94)}
-/* sheet */
 #shade{position:fixed;inset:0;background:rgba(80,40,50,.28);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);z-index:30;opacity:0;pointer-events:none;visibility:hidden;transition:opacity .25s,visibility 0s .25s}
 #shade.on{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .25s}
 #sheet{position:fixed;left:50%;bottom:0;transform:translate(-50%,105%);width:min(680px,100%);max-height:92vh;overflow:auto;z-index:31;padding:18px 18px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.8);visibility:hidden;transition:transform .32s cubic-bezier(.2,.9,.25,1),visibility 0s .32s}
@@ -133,13 +132,13 @@ details.more .grp{margin-top:6px;padding:4px 14px 14px}
 @keyframes drop{from{transform:translateY(-30px);opacity:0}to{transform:none;opacity:1}}
 details summary{cursor:pointer;color:var(--muted);font-weight:600;padding:6px 8px;font-size:14px}
 a{color:var(--pink)}
-/* robot */
-.rbt{width:100%;height:100%;perspective:520px;perspective-origin:50% 45%}
+/* robot optimizations */
+.rbt{width:100%;height:100%;perspective:520px;perspective-origin:50% 45%;transform:translateZ(0)}
 .rbt-3d{width:100%;height:100%;transform-style:preserve-3d;will-change:transform}
-.rbt svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 7px 8px rgba(190,70,95,.28))}
+.rbt svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 7px 8px rgba(190,70,95,.28));transform:translateZ(0)}
 .r-iris{transform-box:fill-box;transform-origin:center;animation:spin 24s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-#norie{position:fixed;left:0;top:0;width:82px;height:82px;z-index:25;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;will-change:transform}
+#norie{position:fixed;left:0;top:0;width:82px;height:82px;z-index:25;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;will-change:transform;contain:layout paint}
 #norie.held{cursor:grabbing}
 #norie.held .rbt{transform:scale(1.08)}
 .rbt{transition:transform .15s}
@@ -152,24 +151,20 @@ a{color:var(--pink)}
 .nb.pop{animation:nbpop .28s cubic-bezier(.2,1.4,.3,1)}
 @keyframes nbpop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
 .mini-av.ph{background:none;border:0;box-shadow:none;visibility:hidden;cursor:default}
-/* greeting (head only) */
-#hello{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(255,248,238,.6);-webkit-backdrop-filter:blur(26px) saturate(170%);backdrop-filter:blur(26px) saturate(170%);opacity:0;pointer-events:none;visibility:hidden;transition:opacity .3s,visibility 0s .3s}
+#hello{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(255,248,238,.6);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);opacity:0;pointer-events:none;visibility:hidden;transition:opacity .3s,visibility 0s .3s}
 #hello.on{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .3s}
-.hello-av{width:min(64vw,270px);height:min(64vw,270px);font-size:min(46vw,190px);display:grid;place-items:center}
+.hello-av{width:min(64vw,270px);height:min(64vw,270px);font-size:min(46vw,190px);display:grid;place-items:center;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 .hwrap{display:flex;flex-direction:column;align-items:center;gap:16px}
-.hello-av{cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 .hbub{min-height:46px;max-width:min(300px,84vw);padding:11px 18px;border-radius:18px;font-size:15px;font-weight:700;text-align:center;color:var(--ink);background:rgba(255,255,255,.92);border:1px solid var(--glass-b);box-shadow:0 8px 24px rgba(200,80,100,.2);transition:opacity .2s;pointer-events:none}
 .hbub.off{opacity:0}
 .hbub.pop{animation:nbpop .28s cubic-bezier(.2,1.4,.3,1)}
 .hx{position:absolute;top:calc(env(safe-area-inset-top) + 14px);right:16px;width:38px;height:38px;font-size:17px}
 #hello.on .hello-av>*{animation:pop .5s cubic-bezier(.2,1.5,.3,1) both}
 @keyframes pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
-/* date row */
-.datebox{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:56px}
+.datebox{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:56px;cursor:pointer;-webkit-user-select:none;user-select:none}
 .datebox .dl{font-size:16px;font-weight:600}
 .datebox .dv{font-size:16px;font-weight:700;color:var(--pink)}
 .datebox .dv.on{color:var(--ink)}
-.datebox{cursor:pointer;-webkit-user-select:none;user-select:none}
 .datebox:focus-visible{outline:3px solid rgba(244,104,127,.35)}
 .datebox .dv.ph{color:var(--muted)}
 .datebox .chev{color:var(--muted);font-size:13px;margin-left:6px;transition:transform .2s;display:inline-block}
@@ -204,18 +199,50 @@ a{color:var(--pink)}
 <div id="hello"></div>
 
 <script>
-/* ---------- storage ---------- */
+/* ---------- storage & sync ---------- */
 const KEY='petal.v1';
 const defaultState={
   lists:[{id:'personal',name:'Personal',e:'🌸'},{id:'work',name:'Work',e:'💼'},{id:'home',name:'Home',e:'🏡'},{id:'shop',name:'Shopping',e:'🛍️'},{id:'health',name:'Health',e:'💗'}],
   tasks:[],
-  settings:{tgToken:'',tgChat:'',nag:10,sound:true,name:'Yishak',greet:true,autoCal:true,robotPos:null,avatar:{type:'robot',emoji:'😊',photo:''}}
+  settings:{tgToken:'',tgChat:'',gasUrl:'',nag:10,sound:true,name:'Yishak',greet:true,autoCal:true,robotPos:null,avatar:{type:'robot',emoji:'😊',photo:''}}
 };
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))||structuredClone(defaultState)}catch(e){S=structuredClone(defaultState)}
 S.settings=Object.assign({},defaultState.settings,S.settings||{});
 S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Storage is full — export a backup and clear space.')}};
+
+async function syncToGas(){
+  if(!S.settings.gasUrl||!navigator.onLine)return;
+  try{
+    await fetch(S.settings.gasUrl,{
+      method:'POST',
+      mode:'no-cors',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'save',userId:(S.settings.name||'default').toLowerCase(),payload:S})
+    });
+  }catch(_){}
+}
+
+const save=()=>{
+  try{
+    localStorage.setItem(KEY,JSON.stringify(S));
+    syncToGas();
+  }catch(e){alert('Storage full — clear space.')}
+};
+
+async function loadFromGas(){
+  if(!S.settings.gasUrl||!navigator.onLine)return;
+  try{
+    const res=await fetch(`${S.settings.gasUrl}?action=load&userId=${encodeURIComponent((S.settings.name||'default').toLowerCase())}`);
+    const data=await res.json();
+    if(data.status==='ok'&&data.payload){
+      S=data.payload;
+      localStorage.setItem(KEY,JSON.stringify(S));
+      render();
+    }
+  }catch(_){}
+}
+
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 
@@ -390,7 +417,7 @@ function setPhoto(file){
     S.settings.avatar={...S.settings.avatar,type:'photo',photo:c.toDataURL('image/png')};
     save();URL.revokeObjectURL(url);render();
   };
-  img.onerror=()=>alert('Couldn’t read that image. Try a PNG or JPG.');
+  img.onerror=()=>alert('Couldn’t read that image. Try PNG or JPG.');
   img.src=url;
 }
 
@@ -412,7 +439,7 @@ $('#hello').onclick=e=>{
   hideHello();
 };
 
-/* ---------- quick-add language parser ---------- */
+/* ---------- parser ---------- */
 function parseQuick(text){
   let title=text,due=null,repeat='none';
   const cut=re=>{const m=title.match(re);if(m)title=title.replace(re,' ');return m};
@@ -439,7 +466,7 @@ function parseQuick(text){
   return {title:title||text.trim(),due,repeat};
 }
 
-/* ---------- notifications / reminders ---------- */
+/* ---------- notifications ---------- */
 function beep(){
   if(!S.settings.sound)return;
   try{
@@ -623,24 +650,25 @@ function vSettings(){
    ${av.type==='photo'?`<div class="btns" style="margin-top:4px"><button class="btn small" id="av_pick">Choose image…</button></div><input type="file" id="av_file" accept="image/*" hidden>
      <p>iPhone Memoji: send a Memoji sticker in Messages, touch &amp; hold it, save it to Photos, then choose it here.</p>`:''}
    <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Petal</span>${swHTML('s_greet',st.greet)}</div></div>
+  <div class="glass setrow" style="margin-top:12px"><b>☁️ Free Cloud Storage (Google Apps Script)</b>
+   <p>Paste your Apps Script Web App URL to sync tasks across all devices automatically.</p>
+   <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+   <div class="btns" style="margin-top:10px"><button class="btn main small" id="gassync">Sync Now</button></div>
+   <div class="status" id="gasstat"></div></div>
   <div class="glass setrow" style="margin-top:12px"><b>📅 Calendar</b>
    <div class="grow" style="padding:10px 0 0;min-height:0"><span>Auto-add tasks that have a time</span>${swHTML('s_cal',st.autoCal)}</div>
-   <p>Gives you an alert from your phone’s own Calendar even when Petal is closed or you’re offline. Each event contains a link back to Petal.</p></div>
-  <div class="glass setrow" style="margin-top:12px"><b>🔔 Phone / PC notifications</b>
-   <p>Allow notifications so reminders pop up on your screen, even from this installed app.</p>
-   <div class="status ${np==='granted'?'ok':'no'}">${np==='granted'?'Enabled ✓':np==='denied'?'Blocked — enable in browser settings':np==='unsupported'?'Not supported here (install to Home Screen first on iPhone)':'Not enabled yet'}</div>
-   <div class="btns" style="margin-top:12px"><button class="btn main small" id="askperm">Enable notifications</button><button class="btn small" id="testn">Test</button></div></div>
+   <p>Gives you an alert from your phone’s own Calendar even when Petal is closed or you’re offline.</p></div>
+  <div class="glass setrow" style="margin-top:12px"><b>🔔 Notifications</b>
+   <div class="status ${np==='granted'?'ok':'no'}">${np==='granted'?'Enabled ✓':np==='denied'?'Blocked — check browser settings':'Not enabled yet'}</div>
+   <div class="btns" style="margin-top:12px"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div></div>
   <div class="glass setrow" style="margin-top:12px"><b>🔁 Keep reminding me</b><p>When a reminder is missed, nag again every…</p>
    <select id="nag" style="margin-top:10px">${[[0,'Don’t repeat'],[5,'5 minutes'],[10,'10 minutes'],[30,'30 minutes'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${st.nag===v?'selected':''}>${n}</option>`).join('')}</select>
    <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Play a soft chime</span>${swHTML('snd',st.sound)}</div></div>
   <div class="glass setrow" style="margin-top:12px"><b>✈️ Telegram reminders (free)</b>
-   <p>1) In Telegram, message <b>@BotFather</b> → /newbot → copy the token.<br>2) Message your new bot once, then message <b>@userinfobot</b> to get your numeric Chat ID.<br>3) Paste both below. Needs internet when the reminder fires.</p>
    <label>Bot token</label><input id="tgt" value="${esc(st.tgToken)}" placeholder="123456:ABC-DEF..." autocomplete="off">
    <label>Chat ID</label><input id="tgc" value="${esc(st.tgChat)}" placeholder="123456789" inputmode="numeric">
    <div class="btns"><button class="btn main small" id="tgsave">Save &amp; send test</button></div><div class="status" id="tgstat"></div></div>
-  <div class="glass setrow" style="margin-top:12px"><b>📲 Install Petal</b>
-   ${standalone?'<div class="status ok">Installed ✓ You’re using the app.</div>':`<p>${isIOS?'On iPhone: tap the Share button in Safari, then “Add to Home Screen”.':'Install Petal as an app. It opens full-screen, works offline and can send reminders.'}</p>${installEv?'<div class="btns" style="margin-top:12px"><button class="btn main small" id="installbtn">Install app</button></div>':(isIOS?'':'<p>Or use your browser menu → “Install app”.</p>')}`}</div>
-  <div class="glass setrow" style="margin-top:12px"><b>💾 Backup</b><p>Your data lives only on this device. Export a copy now and then, or move it between phone and PC.</p>
+  <div class="glass setrow" style="margin-top:12px"><b>💾 Backup</b><p>Export local backup file.</p>
    <div class="btns" style="margin-top:12px"><button class="btn small" id="exp">Export</button><button class="btn small" id="imp">Import</button></div><input type="file" id="impf" accept=".json" hidden></div>`;
 }
 function render(){
@@ -662,18 +690,25 @@ $('#app').addEventListener('click',async e=>{
   const av=T.closest('[data-av]');if(av){S.settings.avatar.type=av.dataset.av;save();render();return}
   const em=T.closest('[data-em]');if(em){S.settings.avatar.emoji=em.dataset.em;save();render();return}
   if(T.id==='av_pick'){$('#av_file').click();return}
-  if(T.id==='newlist'){const n=prompt('List name?');if(n){const em=prompt('An emoji for it?','✨')||'✨';S.lists.push({id:uid(),name:n.trim(),e:em.trim().slice(0,4)});save();render()}return}
-  const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list? Its tasks move to the first list.')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
+  if(T.id==='newlist'){const n=prompt('List name?');if(n){const em=prompt('Emoji?','✨')||'✨';S.lists.push({id:uid(),name:n.trim(),e:em.trim().slice(0,4)});save();render()}return}
+  const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list?')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
   if(T.id==='askperm'){await Notification.requestPermission();render();return}
-  if(T.id==='testn'){await sysNotify('Petal 🌸','Notifications are working!','test');beep();toast({id:'x'},{title:'Test reminder',body:'This is how reminders look in-app.'});return}
-  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🌸 Hi ${myName()}, it’s Norie! Petal is connected. Your reminders will show up here.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Couldn’t send — check token, chat ID, and that you’re online.';return}
-  if(T.id==='installbtn'&&installEv){installEv.prompt();try{await installEv.userChoice}catch(_){}installEv=null;render();return}
+  if(T.id==='testn'){await sysNotify('Petal 🌸','Notifications working!','test');beep();toast({id:'x'},{title:'Test',body:'Reminders look like this.'});return}
+  if(T.id==='gassync'){
+    S.settings.gasUrl=$('#gas_url').value.trim();save();
+    $('#gasstat').className='status ok';$('#gasstat').textContent='Syncing...';
+    await syncToGas();await loadFromGas();
+    $('#gasstat').textContent='Cloud sync updated ✓';
+    return;
+  }
+  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🌸 Hi ${myName()}, it’s Norie! Petal is connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';return}
   if(T.id==='exp'){download('petal-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,1),'application/json');return}
   if(T.id==='imp'){$('#impf').click();return}
 });
 $('#app').addEventListener('input',e=>{
   if(e.target.id==='s_name'){S.settings.name=e.target.value;saveSoon()}
   if(e.target.id==='s_emoji'){S.settings.avatar.emoji=e.target.value;saveSoon()}
+  if(e.target.id==='gas_url'){S.settings.gasUrl=e.target.value;saveSoon()}
 });
 $('#app').addEventListener('change',e=>{
   const id=e.target.id;
@@ -682,10 +717,10 @@ $('#app').addEventListener('change',e=>{
   if(id==='s_greet'){S.settings.greet=e.target.checked;save()}
   if(id==='s_cal'){S.settings.autoCal=e.target.checked;save()}
   if(id==='av_file'){const f=e.target.files[0];if(f)setPhoto(f)}
-  if(id==='impf'){const f=e.target.files[0];if(!f)return;f.text().then(x=>{try{const d=JSON.parse(x);if(!d.tasks||!d.lists)throw 0;if(confirm('Replace current data with this backup?')){S=d;S.settings=Object.assign({},defaultState.settings,S.settings||{});S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});save();render()}}catch(_){alert('That file isn’t a Petal backup.')}})}
+  if(id==='impf'){const f=e.target.files[0];if(!f)return;f.text().then(x=>{try{const d=JSON.parse(x);if(!d.tasks||!d.lists)throw 0;if(confirm('Restore backup?')){S=d;save();render()}}catch(_){alert('Invalid backup file.')}})}
 });
 
-/* ---------- new / edit task sheet ---------- */
+/* ---------- sheet & calendar ---------- */
 let editing=null,draft={};
 $('#fab').onclick=()=>openSheet(null);
 $('#shade').onclick=closeSheet;
@@ -695,9 +730,8 @@ function sumUpdate(){
   if(draft.due){el.className='dv on';el.textContent=dayLabel(draft.due)+', '+fmtT(draft.due)}
   else{el.className='dv ph';el.textContent='Today · '+new Date().toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})}
   $('#f_clr').hidden=!draft.due;
-  $('#f_cal').textContent=draft.due?(S.settings.autoCal?'📅 Will be added to your Calendar':''):'No reminder yet — tap to pick a date & time';
+  $('#f_cal').textContent=draft.due?(S.settings.autoCal?'📅 Added to Calendar':''):'No reminder yet';
 }
-/* small calendar */
 let calY=0,calM=0;
 function defTime(){const d=new Date();d.setMinutes(0,0,0);d.setHours(d.getHours()+1);return d}
 function calRender(){
@@ -708,16 +742,16 @@ function calRender(){
   for(let d=1;d<=dim;d++){const ts=new Date(calY,calM,d).getTime();
     cells+=`<button type="button" class="cd${ts===today?' td':''}${ts===sel?' sl':''}" data-cd="${ts}">${d}</button>`}
   const tv=draft.due?new Date(draft.due):defTime();
-  p.innerHTML=`<div class="cal-h"><button type="button" class="cn" data-cn="-1" aria-label="Previous month">‹</button><b>${first.toLocaleDateString([], {month:'long',year:'numeric'})}</b><button type="button" class="cn" data-cn="1" aria-label="Next month">›</button></div>
+  p.innerHTML=`<div class="cal-h"><button type="button" class="cn" data-cn="-1">‹</button><b>${first.toLocaleDateString([], {month:'long',year:'numeric'})}</b><button type="button" class="cn" data-cn="1">›</button></div>
   <div class="cal-w">${['S','M','T','W','T','F','S'].map(x=>`<span>${x}</span>`).join('')}</div>
   <div class="cal-g">${cells}</div>
-  <div class="cal-f"><button type="button" class="chip" data-cq="0">Today</button><button type="button" class="chip" data-cq="1">Tomorrow</button><input type="time" id="f_time" value="${pad(tv.getHours())}:${pad(tv.getMinutes())}" aria-label="Time"><button type="button" class="chip on" id="f_cdone">Done</button></div>`;
+  <div class="cal-f"><button type="button" class="chip" data-cq="0">Today</button><button type="button" class="chip" data-cq="1">Tomorrow</button><input type="time" id="f_time" value="${pad(tv.getHours())}:${pad(tv.getMinutes())}"><button type="button" class="chip on" id="f_cdone">Done</button></div>`;
 }
 function calToggle(force){
   const p=$('#f_calp'),r=$('#f_row');if(!p)return;
   const open=force===undefined?p.hidden:force;
   p.hidden=!open;r.setAttribute('aria-expanded',open);
-  if(open){const b=draft.due?new Date(draft.due):new Date();calY=b.getFullYear();calM=b.getMonth();calRender();setTimeout(()=>p.scrollIntoView({block:'nearest',behavior:'smooth'}),60)}
+  if(open){const b=draft.due?new Date(draft.due):new Date();calY=b.getFullYear();calM=b.getMonth();calRender()}
 }
 function calSetDay(ts){
   const base=draft.due?new Date(draft.due):defTime(),d=new Date(+ts);
@@ -729,7 +763,7 @@ function openSheet(t){
   draft=t?{...t,manual:true}:{title:'',list:curList||S.lists[0].id,due:null,repeat:'none',manual:false};
   const nagv=draft.nag??'';
   $('#sheet').innerHTML=`<div class="grab"></div>
-  <div class="sh-top"><b>${t?'Edit task':'New task'}</b><button class="x" id="f_x" aria-label="Close">✕</button></div>
+  <div class="sh-top"><b>${t?'Edit task':'New task'}</b><button class="x" id="f_x">✕</button></div>
   <input id="f_title" class="big" value="${esc(draft.title)}" placeholder="What needs doing?" autocomplete="off">
   ${t?'':'<div class="hint">Try: “call mom tomorrow 5pm” or “gym in 30 min”</div>'}
   <div class="sec">When</div>
@@ -744,7 +778,7 @@ function openSheet(t){
   <details class="more"><summary>More options</summary>
     <div class="card glass grp">
       <label>Notes</label><textarea id="f_notes" placeholder="Optional details">${esc(draft.notes||'')}</textarea>
-      <label>Nag me every</label><select id="f_nag"><option value="" ${nagv===''?'selected':''}>Default (${S.settings.nag?S.settings.nag+' min':'off'})</option>${[[0,'Once only'],[5,'5 min'],[10,'10 min'],[30,'30 min'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${nagv===v?'selected':''}>${n}</option>`).join('')}</select>
+      <label>Nag me every</label><select id="f_nag"><option value="" ${nagv===''?'selected':''}>Default</option>${[[0,'Once only'],[5,'5 min'],[10,'10 min'],[30,'30 min'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${nagv===v?'selected':''}>${n}</option>`).join('')}</select>
     </div>
   </details>
   <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
@@ -760,12 +794,11 @@ $('#sheet').addEventListener('click',e=>{
   const cd=T.closest('[data-cd]');if(cd){calSetDay(cd.dataset.cd);return}
   const cn=T.closest('[data-cn]');if(cn){calM+=+cn.dataset.cn;if(calM<0){calM=11;calY--}if(calM>11){calM=0;calY++}calRender();return}
   const cq=T.closest('[data-cq]');if(cq){const d=new Date();d.setDate(d.getDate()+(+cq.dataset.cq));calSetDay(d.getTime());return}
-  if(T.id==='f_cdone'){calToggle(false);return}
-  if(T.id==='f_x'){closeSheet();return}
+  if(T.id==='f_cdone'||T.id==='f_x'){closeSheet();return}
   if(T.id==='f_save')saveSheet();
-  if(T.id==='f_del'){if(confirm('Delete this task?')){S.tasks=S.tasks.filter(x=>x!==editing);save();closeSheet();render()}}
+  if(T.id==='f_del'){if(confirm('Delete task?')){S.tasks=S.tasks.filter(x=>x!==editing);save();closeSheet();render()}}
   if(T.id==='f_ics'){
-    if(!draft.due){alert('Pick a reminder time first.');return}
+    if(!draft.due)return alert('Pick time first');
     addToCalendar({...editing,title:$('#f_title').value.trim()||editing.title,notes:$('#f_notes').value.trim(),due:draft.due,repeat:$('#f_rep').value});
   }
 });
@@ -782,10 +815,6 @@ $('#sheet').addEventListener('change',e=>{
     d.setHours(h,m,0,0);draft.manual=true;draft.due=d.getTime();sumUpdate();
     const sl=$('#f_calp .cd.sl');if(!sl)calRender();
   }
-});
-$('#sheet').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&e.target.id==='f_title')saveSheet();
-  if((e.key==='Enter'||e.key===' ')&&e.target.id==='f_row'){e.preventDefault();calToggle()}
 });
 function saveSheet(){
   let title=$('#f_title').value.trim();if(!title){$('#f_title').focus();return}
@@ -804,10 +833,9 @@ function saveSheet(){
   }
   save();closeSheet();render();
   if(due&&S.settings.autoCal&&dueChanged)addToCalendar(task);
-  if(due&&'Notification' in window&&Notification.permission==='default')Notification.requestPermission().then(render);
 }
 
-/* ---------- Norie: floating, draggable, motion-tracking robot ---------- */
+/* ---------- norie animation & engine ---------- */
 const NSZ=82;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -822,28 +850,24 @@ const EXP={
   meh:{cover:.24,tilt:6,sq:.1,m:-.1,o:.05,teeth:0,pupil:.92,tint:.12,vein:0},
   mad:{cover:.42,tilt:17,sq:.55,m:-.55,o:.42,teeth:1,pupil:.7,tint:1,vein:1},
   held:{cover:-.2,tilt:-6,sq:0,m:-.1,o:.85,teeth:0,pupil:1.3,tint:0,vein:0},
-  happy:{cover:.12,tilt:-3,sq:.38,m:1,o:.35,teeth:0,pupil:1.1,tint:0,vein:0}
+  happy:{cover:.12,tilt:-3,sq:.38,m:1,o:.35,teeth:0,pupil:1.1,tint:0,vein:0},
+  ache:{cover:.5,tilt:-12,sq:.7,m:-.8,o:.3,teeth:0,pupil:.6,tint:.3,vein:0,ache:1},
+  dizzy:{cover:.1,tilt:0,sq:0,m:0,o:.4,teeth:0,pupil:1,tint:0,vein:0,dizzy:1}
 };
-EXP.ache={cover:.5,tilt:-12,sq:.7,m:-.8,o:.3,teeth:0,pupil:.6,tint:.3,vein:0,ache:1};
-EXP.dizzy={cover:.1,tilt:0,sq:0,m:0,o:.4,teeth:0,pupil:1,tint:0,vein:0,dizzy:1};
 for(const k in EXP)EXP[k]=Object.assign({dizzy:0,ache:0},EXP[k]);
 const clampPos=(x,y)=>({x:clamp(x,4,innerWidth-NSZ-4),y:clamp(y,4,innerHeight-NSZ-4)});
 
-/* where the robot rests */
 function homePos(){
   const p=S.settings.robotPos;
   if(p&&isFinite(p.fx)&&isFinite(p.fy))return clampPos(p.fx*innerWidth-NSZ/2,p.fy*innerHeight-NSZ/2);
   const ph=document.querySelector('.mini-av.ph');
   if(ph){const r=ph.getBoundingClientRect();return clampPos(r.left+r.width/2-NSZ/2,Math.max(10,r.top+r.height/2-NSZ/2))}
-  const a=$('#app').getBoundingClientRect();
-  return clampPos(a.right-16-NSZ+4,22);
+  return clampPos(innerWidth-NSZ-20,22);
 }
 
-/* undone tasks currently on screen */
-var ORc=null,ORt=0,_re=null,_rid=null;
-function rowEl(id){if(_re&&_rid===id&&_re.isConnected)return _re;_rid=id;_re=document.querySelector(`#app .row[data-id="${id}"]`);return _re}
+var ORc=null,ORt=0;
 function openRows(){
-  const nw=performance.now();if(ORc&&nw-ORt<150)return ORc;
+  const nw=performance.now();if(ORc&&nw-ORt<200)return ORc;
   const out=[],H=innerHeight;
   document.querySelectorAll('#app .row:not(.done)').forEach(r=>{
     const b=r.getBoundingClientRect(),cy=b.top+b.height/2;
@@ -857,7 +881,6 @@ function rowTarget(row){
   return clampPos(b.right-NSZ-4,b.top+b.height/2-NSZ/2);
 }
 
-/* speech bubble */
 const NLINES=[t=>`Ugh… “${t}” is STILL not done.`,t=>`Seriously? ${t}. Do it already.`,t=>`${t}… I’m watching you 👀`,()=>`Tap the circle. Just tap it.`,t=>`Still waiting on “${t}”.`];
 function nPlace(){
   const b=$('#nbub'),cls='nb '+(NPOS.y>100?'up':'dn')+' '+(NPOS.x+NSZ/2>innerWidth/2?'r':'l');
@@ -876,26 +899,23 @@ function nSpeak(row){
 function norieCheer(){
   if(S.settings.avatar.type!=='robot')return;
   NR.forced='happy';NR.forcedUntil=performance.now()+2800;
-  nSay(rand(['Finally. 🙄 …nice one!','One down! Keep going 💗','About time! Proud of you.','Look at you being productive ✨']),2800);
+  nSay(rand(['Finally! Nice one 💗','One down! Keep going.','About time! Proud of you ✨']),2800);
 }
-
-/* big-head view: poke, shake, spam */
 function nHSay(txt,ms){
   const b=$('#hbub');if(!b)return;
   b.textContent=txt;b.classList.remove('off','pop');void b.offsetWidth;b.classList.add('pop');
   clearTimeout(NR.hbT);NR.hbT=setTimeout(()=>b.classList.add('off'),ms);
   NR.talkUntil=performance.now()+Math.min(ms,1400);
 }
-function nSayAll(txt,ms){if($('#hello').classList.contains('on')&&$('#hbub'))nHSay(txt,ms);else nSay(txt,ms)}
 function nPoke(){
   const now=performance.now();
   NR.clicks=(NR.clicks||[]).filter(t=>now-t<3000);NR.clicks.push(now);
   if(NR.clicks.length>=5){
     NR.clicks=[];NR.bigExpr='mad';NR.bigUntil=now+3800;
-    nHSay(rand(['STOP POKING ME!!','OKAY, THAT’S ENOUGH. 😤','I said STOP. Seriously.']),3300);
+    nHSay(rand(['STOP POKING ME!!','THAT’S ENOUGH 😤']),3300);
   }else if(!(NR.bigExpr==='mad'&&now<NR.bigUntil)){
     NR.bigExpr='ache';NR.bigUntil=now+1800;
-    nHSay(rand(['Ow! My head hurts… 🤕','Ouch… headache.','Not the head!']),1700);
+    nHSay('Ow! Headache… 🤕',1700);
   }
 }
 function nBigExpr(now){return now<NR.dizzyUntil?'dizzy':now<NR.bigUntil?NR.bigExpr:'happy'}
@@ -904,10 +924,9 @@ function nShake(a){
   NR.shakeAcc=Math.max(0,NR.shakeAcc-(now-NR.shakeAccT)/1000*.6)+a;NR.shakeAccT=now;
   if(NR.shakeAcc>2.2&&now>NR.dizzyUntil){
     NR.shakeAcc=0;NR.dizzyUntil=now+4800;NR.shakeUntil=0;
-    nSayAll(rand(['Whoa… everything’s spinning 😵‍💫','Too… much… shaking…','I think I’m gonna short-circuit… 😵']),3800);
+    nSay('Everything’s spinning 😵‍💫',3800);
   }
 }
-/* patrol logic */
 function nextTask(rows,now){
   if(NR.visited>=3){NR.visited=0;NR.mode='home';NR.taskId=null;NR.nextAt=now+9000;return}
   const idx=rows.findIndex(r=>r.id===NR.taskId),r=rows[(idx+1)%rows.length];
@@ -930,11 +949,11 @@ function nLogic(now){
     NR.expr=expr;return;
   }
   if(NR.mode==='task'){
-    const row=rowEl(NR.taskId);
-    if(!row||!rows.some(r=>r.id===NR.taskId)){NR.mode='home';NR.taskId=null;NR.nextAt=now+700}
+    const item=rows.find(r=>r.id===NR.taskId);
+    if(!item){NR.mode='home';NR.taskId=null;NR.nextAt=now+700}
     else{
-      const g=rowTarget(row);T.tx=g.x;T.ty=g.y;
-      if(!NR.arrived&&Math.hypot(T.x-g.x,T.y-g.y)<16){NR.arrived=true;NR.arriveT=now;NR.stayUntil=now+5600;nSpeak(row)}
+      const g=rowTarget(item.el);T.tx=g.x;T.ty=g.y;
+      if(!NR.arrived&&Math.hypot(T.x-g.x,T.y-g.y)<16){NR.arrived=true;NR.arriveT=now;NR.stayUntil=now+5600;nSpeak(item.el)}
       if(NR.arrived&&now>NR.stayUntil){NR.visited++;nextTask(rows,now)}
     }
   }
@@ -953,12 +972,7 @@ function nPhys(dt){
   const q=clampPos(P.x,P.y);P.x=q.x;P.y=q.y;
 }
 
-/* where each head looks */
 function nGaze(now,cx,cy,st){
-  if(st.float&&NR.mode==='task'&&NR.arrived&&!NR.held&&now>=NR.forcedUntil&&Math.floor((now-NR.arriveT)/1900)%2===0){
-    const t=rowEl(NR.taskId)?.querySelector('.t');
-    if(t){const b=t.getBoundingClientRect();return{x:b.left+Math.min(b.width,160)/2,y:b.top+b.height/2}}
-  }
   if(now-NR.lastMove<4500)return{x:NR.mx,y:NR.my};
   if(now-NR.tiltAt<1800)return{x:cx+NR.tx*380,y:cy+NR.ty*380};
   if(now>NR.wanderAt){NR.wanderAt=now+2200+Math.random()*3200;NR.wx=innerWidth*(.15+Math.random()*.7);NR.wy=innerHeight*(.1+Math.random()*.7)}
@@ -968,19 +982,21 @@ const NI=new WeakMap();
 function nInit(el){
   const P={};el.querySelectorAll('[data-p]').forEach(n=>P[n.dataset.p]=n);
   const st={P,hx:0,hy:0,ex:0,ey:0,roll:0,rv:0,ant:0,av:0,E:{...EXP.calm},bt:-1e9,nextBlink:performance.now()+1500,
-    sx:0,sy:0,sxt:0,syt:0,sacAt:0,seenShake:0,float:!!el.closest('#norie'),threeD:el.querySelector('.rbt-3d')};
+    sx:0,sy:0,sxt:0,syt:0,sacAt:0,seenShake:0,float:!!el.closest('#norie'),threeD:el.querySelector('.rbt-3d'),
+    rect:{left:0,top:0,width:NSZ,height:NSZ}};
   NI.set(el,st);return st;
 }
 function mouthPath(m,o,w,cy=184,cx=120){
   const h=3+o*17,corner=cy-m*7,mid=cy+m*8,cu=2*(mid-h/2)-corner,cl=2*(mid+h/2)-corner,x1=cx-w,x2=cx+w,f=n=>n.toFixed(2);
   return{lens:`M${f(x1)} ${f(corner)}Q${cx} ${f(cu)} ${f(x2)} ${f(corner)}Q${cx} ${f(cl)} ${f(x1)} ${f(corner)}Z`,mid:`M${f(x1)} ${f(corner)}Q${cx} ${f(2*mid-corner)} ${f(x2)} ${f(corner)}`};
 }
-const sa=(n,k,v)=>{const c=n._c||(n._c={});if(c[k]!==v){c[k]=v;n.setAttribute(k,v)}};
+const sa=(n,k,v)=>{if(!n)return;const c=n._c||(n._c={});if(c[k]!==v){c[k]=v;n.setAttribute(k,v)}};
+
 function nStep(el,dt,now){
   const st=NI.get(el)||nInit(el),P=st.P,E=st.E;
-  const r=st.float?{left:NPOS.x,top:NPOS.y+(NR.bobNow||0),width:NSZ,height:NSZ}:el.getBoundingClientRect();if(r.width<4)return;
-  const cx=r.left+r.width/2,cy=r.top+r.height*.52;
-  /* head + eyes follow the target (eyes lead, head follows) */
+  const cx=st.float?NPOS.x+NSZ/2:innerWidth/2;
+  const cy=st.float?NPOS.y+NSZ*.52:innerHeight*.45;
+  
   const g=nGaze(now,cx,cy,st),nx=Math.tanh((g.x-cx)/240),ny=Math.tanh((g.y-cy)/240);
   const a=1-Math.exp(-dt*5.5),b=1-Math.exp(-dt*18);
   st.hx+=(nx-st.hx)*a;st.hy+=(ny-st.hy)*a;
@@ -988,7 +1004,7 @@ function nStep(el,dt,now){
   st.sx+=(st.sxt-st.sx)*b;st.sy+=(st.syt-st.sy)*b;
   const ex=clamp((nx-st.hx*.72)*11+st.sx+st.hx*2,-7.5,7.5),ey=clamp((ny-st.hy*.72)*9+st.sy+st.hy*1.5,-6.5,6.5);
   st.ex+=(ex-st.ex)*b;st.ey+=(ey-st.ey)*b;
-  /* expression */
+  
   const tgt=EXP[st.float?NR.expr:nBigExpr(now)]||EXP.calm,k=1-Math.exp(-dt*7);
   for(const key in tgt)E[key]+=(tgt[key]-E[key])*k;
   if(now>st.nextBlink){st.bt=now;st.nextBlink=now+(Math.random()<.2?260:2200+Math.random()*4200)}
@@ -1003,13 +1019,8 @@ function nStep(el,dt,now){
     sa(P['pup-'+s],'r',(5.8*clamp(E.pupil,.5,1.5)).toFixed(2));
     sa(P['redi-'+s],'opacity',(E.tint*.75).toFixed(2));
   }
-  /* depth: face parts slide more than the shell so the head feels 3D */
+  
   const hx=st.hx+E.ache*Math.sin(now/55)*.28+E.dizzy*Math.sin(now/230)*.5,hy=st.hy+E.ache*.25+E.dizzy*Math.sin(now/310)*.25,f=n=>n.toFixed(2);
-  const sp=(now/3)%360;
-  for(const s of ['l','r']){sa(P['spi-'+s],'opacity',E.dizzy.toFixed(2));sa(P['spi-'+s],'transform',`rotate(${f(s==='l'?sp:-sp)})`)}
-  sa(P.stars,'opacity',E.dizzy.toFixed(2));
-  for(let q=0;q<3;q++){const an=now/380+q*2.094;sa(P['star'+q],'transform',`translate(${f(120+Math.cos(an)*54)} ${f(20+Math.sin(an)*10)}) scale(${f(.8+.35*Math.sin(an))})`)}
-  sa(P.pain,'opacity',(E.ache*(.75+.25*Math.sin(now/60))).toFixed(2));
   sa(P.visor,'transform',`translate(${f(hx*9)} ${f(hy*5.5)})`);
   sa(P.eyes,'transform',`translate(${f(hx*5)} ${f(hy*3)})`);
   sa(P.glare,'transform',`translate(${f(-hx*5)} ${f(-hy*3)})`);
@@ -1017,7 +1028,7 @@ function nStep(el,dt,now){
   sa(P.sheen,'transform',`translate(${f(-hx*12)} ${f(-hy*7)})`);
   sa(P['ear-l'],'transform',`translate(21 0) scale(${f(1+hx*.35)} 1) translate(-21 0)`);
   sa(P['ear-r'],'transform',`translate(219 0) scale(${f(1-hx*.35)} 1) translate(-219 0)`);
-  /* mouth */
+  
   const mp=mouthPath(E.m+E.dizzy*Math.sin(now/130)*.6+E.ache*Math.sin(now/45)*.15,clamp(E.o+talk,0,1),25+E.teeth*3);
   for(const id of ['m-hi','m-sh','m-dk','m-clip'])sa(P[id],'d',mp.lens);
   for(const id of ['m-gl','m-gl-b','m-seam'])sa(P[id],'d',mp.mid);
@@ -1029,49 +1040,43 @@ function nStep(el,dt,now){
   sa(P.tint,'opacity',(E.tint*.6).toFixed(2));
   sa(P.flush,'opacity',(E.tint*.55).toFixed(2));
   sa(P.vein,'opacity',E.vein.toFixed(2));
-  sa(P.vein,'transform',`translate(172 60) scale(${f(.9+E.vein*(.12+.1*Math.sin(now/130)))})`);
-  /* physics-y roll + antenna wobble */
+  
   const vx=st.float?(NR.held?NR.vx:NPOS.vx):0;
   if(st.float&&NR.shakeStamp!==st.seenShake){st.seenShake=NR.shakeStamp;st.rv+=(Math.random()<.5?-1:1)*(300+Math.random()*250)}
   const tilt=now-NR.tiltAt<1800?NR.tx*9:0;
   const rollT=clamp(vx*.022,-16,16)+tilt+E.dizzy*Math.sin(now/200)*9;
   st.rv+=(120*(rollT-st.roll)-9*st.rv)*dt;st.roll+=st.rv*dt;
-  const trem=st.float&&!REDUCED?E.tint*(Math.sin(now/37)*.9+Math.sin(now/23)*.5)*(NR.mode==='task'&&NR.arrived?1:.35):0;
   const aT=-st.roll*1.3-hx*8;
   st.av+=(140*(aT-st.ant)-6*st.av)*dt;st.ant+=st.av*dt;
   sa(P.ant,'transform',`rotate(${clamp(st.ant,-35,35).toFixed(2)} 120 36)`);
-  const t3=`translateX(${f(trem*.7)}px) rotateX(${f(-hy*13)}deg) rotateY(${f(hx*22)}deg) rotateZ(${f(st.roll+trem*.8)}deg)`;
+  
+  const t3=`rotateX(${f(-hy*13)}deg) rotateY(${f(hx*22)}deg) rotateZ(${f(st.roll)}deg)`;
   if(st.t3!==t3){st.t3=t3;st.threeD.style.transform=t3}
 }
 
-/* frame loop */
-let nLast=performance.now(),nLastStep=0,nSlow=0,nCnt=0,nLite=false,nEl=null,nBub=null,nHello=null;
+let nLast=performance.now(),nEl=null,nBub=null,nHello=null;
 function nFrame(now){
-  const raw=now-nLast,dt=Math.min(.05,Math.max(.001,raw/1000));nLast=now;
+  const dt=Math.min(.05,Math.max(.001,(now-nLast)/1000));nLast=now;
   const el=nEl||(nEl=$('#norie')),on=el&&el.style.display!=='none';
-  /* safety valve: if a phone really can't keep ~45fps, refresh the face at 30fps (motion stays smooth) */
-  if(!nLite&&raw<250){nCnt++;if(raw>26)nSlow++;if(nCnt>=150){if(nSlow/nCnt>.6)nLite=true;nCnt=0;nSlow=0}}
   if(on){
     nLogic(now);nPhys(dt);
     if(NR.held)NR.vx*=Math.exp(-dt*5);
-    const bob=NR.held||REDUCED?0:Math.sin(now/650)*2.6;NR.bobNow=bob;
+    const bob=NR.held||REDUCED?0:Math.sin(now/650)*2.6;
     el.style.transform=`translate3d(${NPOS.x.toFixed(1)}px,${(NPOS.y+bob).toFixed(1)}px,0)`;
     const bub=nBub||(nBub=$('#nbub'));
     if(!bub.hidden){if(now>NR.bubUntil)bub.hidden=true;else nPlace()}
   }
   const hello=(nHello||(nHello=$('#hello'))).classList.contains('on');
-  if(!(nLite&&now-nLastStep<30)&&(on||hello)){
-    const sdt=nLite?Math.min(.05,(now-nLastStep)/1000):dt;nLastStep=now;
+  if(on||hello){
     document.querySelectorAll('.rbt').forEach(r=>{
       if(r.closest('#hello')){if(!hello)return}
       else if(!on)return;
-      nStep(r,sdt,now);
+      nStep(r,dt,now);
     });
   }
   requestAnimationFrame(nFrame);
 }
 
-/* drag & drop */
 function nDrag(el){
   let d=null;
   el.addEventListener('pointerdown',e=>{
@@ -1102,14 +1107,12 @@ function nDrag(el){
   el.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
-/* phone tilt + shake */
 let tiltOn=false;
 function nTilt(){
   if(tiltOn)return;tiltOn=true;
   addEventListener('deviceorientation',e=>{
     if(e.gamma==null||e.beta==null)return;
-    const x=clamp(e.gamma/30,-1,1),y=clamp((e.beta-45)/30,-1,1),now=performance.now();
-    if(Math.abs(x-NR.tx)+Math.abs(y-NR.ty)>.03)NR.tiltAt=now;
+    const x=clamp(e.gamma/30,-1,1),y=clamp((e.beta-45)/30,-1,1);
     NR.tx=x;NR.ty=y;
   },true);
   let lx=0,ly=0,lz=0;
@@ -1134,7 +1137,7 @@ function syncNorie(){
 }
 function initNorie(){
   const el=document.createElement('div');
-  el.id='norie';el.setAttribute('role','img');el.setAttribute('aria-label','Norie the robot. Drag me anywhere.');
+  el.id='norie';el.setAttribute('role','img');el.setAttribute('aria-label','Norie the robot');
   el.innerHTML=robotSVG()+'<div id="nbub" class="nb" hidden></div>';
   document.body.appendChild(el);
   const h=homePos();Object.assign(NPOS,{x:h.x,y:h.y,tx:h.x,ty:h.y});
@@ -1151,12 +1154,9 @@ function initNorie(){
   requestAnimationFrame(nFrame);
 }
 
-let installEv=null;
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEv=e;if(tab==='settings')render()});
-addEventListener('appinstalled',()=>{installEv=null;if(tab==='settings')render()});
 /* ---------- boot ---------- */
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-render();tick();
+render();tick();loadFromGas();
 const fromLink=openFromHash();
 initNorie();
 if(!fromLink&&S.settings.greet!==false)showHello();
