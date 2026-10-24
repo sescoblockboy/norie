@@ -13,6 +13,16 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <style>
+  html, body {
+  -webkit-user-select: auto !important;
+  user-select: auto !important;
+  min-height: 100vh;
+}
+input, select, textarea {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  touch-action: manipulation !important;
+}
 :root{
   --pink:#f4687f; --pink2:#ffc4cd; --pink3:#ffe8ec;
   --gold:#c8962e; --gold2:#f4d98f;
