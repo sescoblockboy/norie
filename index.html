@@ -63,13 +63,13 @@ h2.over{color:var(--pink)}
 .m{font-size:13px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
 .m .late{color:var(--pink);font-weight:600}
 
-/* Compressed Completed Row */
-.row.done{padding:6px 16px;opacity:.75;min-height:36px}
-.row.done .chk{background:linear-gradient(135deg,var(--pink),#ff9aab);border-color:transparent;width:20px;height:20px}
-.row.done .chk::after{content:"";width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
-.row.done .t{text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:500}
-.row.done .m{display:none} /* Hides the metadata to compress height */
-.row.done+.row::before{left:46px}
+/* Ultra-compressed Completed Row */
+.row.done{padding:4px 16px;opacity:.65;min-height:28px}
+.row.done .chk{background:linear-gradient(135deg,var(--pink),#ff9aab);border-color:transparent;width:18px;height:18px}
+.row.done .chk::after{content:"";width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.row.done .t{text-decoration:line-through;color:var(--muted);font-size:13px;font-weight:500}
+.row.done .m{display:none} 
+.row.done+.row::before{left:42px}
 
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
 .p1{background:var(--gold)} .p2{background:var(--pink)}
@@ -136,8 +136,15 @@ details.more .grp{margin-top:6px;padding:4px 14px 14px}
 .toast b{display:block;font-size:16px;margin-bottom:2px}
 .toast .tb{display:flex;gap:8px;margin-top:10px}
 @keyframes drop{from{transform:translateY(-30px);opacity:0}to{transform:none;opacity:1}}
-details summary{cursor:pointer;color:var(--muted);font-weight:600;padding:6px 8px;font-size:14px}
+
+/* Details Settings styling */
+details summary{cursor:pointer;font-weight:700;padding:6px 2px;font-size:15px;list-style:none;display:flex;align-items:center;justify-content:space-between;color:var(--ink)}
+details summary::-webkit-details-marker{display:none}
+details summary::after{content:"▾";color:var(--muted);font-size:18px;transition:transform .2s;font-weight:400}
+details[open] summary::after{transform:rotate(180deg)}
+details .setwrap{padding-top:12px;animation:drop .3s cubic-bezier(.2,.9,.25,1)}
 a{color:var(--pink)}
+
 /* robot optimizations */
 .rbt{width:100%;height:100%;perspective:520px;perspective-origin:50% 45%;transform:translateZ(0)}
 .rbt-3d{width:100%;height:100%;transform-style:preserve-3d;will-change:transform}
@@ -148,10 +155,12 @@ a{color:var(--pink)}
 #norie.held{cursor:grabbing}
 #norie.held .rbt{transform:scale(1.08)}
 .rbt{transition:transform .15s}
-.nb{position:absolute;width:max-content;max-width:min(230px,72vw);padding:9px 13px;border-radius:16px;font-size:13px;font-weight:700;line-height:1.3;color:var(--ink);background:rgba(255,255,255,.9);border:1px solid var(--glass-b);box-shadow:0 8px 24px rgba(200,80,100,.22);pointer-events:none;z-index:2}
+
+/* Wider, bigger speech bubble placed securely above */
+.nb{position:absolute;width:max-content;max-width:280px;padding:12px 16px;border-radius:18px;font-size:14.5px;font-weight:700;line-height:1.35;color:var(--ink);background:rgba(255,255,255,.95);border:1px solid var(--glass-b);box-shadow:0 8px 26px rgba(200,80,100,.3);pointer-events:none;z-index:50;white-space:normal;word-wrap:break-word}
 .nb.up{bottom:calc(100% + 8px)} .nb.dn{top:calc(100% + 8px)}
 .nb.r{right:0} .nb.l{left:0}
-.nb::after{content:"";position:absolute;width:11px;height:11px;background:inherit;border:inherit;transform:rotate(45deg)}
+.nb::after{content:"";position:absolute;width:12px;height:12px;background:inherit;border:inherit;transform:rotate(45deg)}
 .nb.up::after{bottom:-6px;border-top:0;border-left:0} .nb.dn::after{top:-6px;border-bottom:0;border-right:0}
 .nb.r::after{right:34px} .nb.l::after{left:34px}
 .nb.pop{animation:nbpop .28s cubic-bezier(.2,1.4,.3,1)}
@@ -220,10 +229,10 @@ S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avata
 async function syncToGas(){
   if(!S.settings.gasUrl||!navigator.onLine)return;
   try{
+    // Using plain text bypasses strict browser CORS preflight blocks
     await fetch(S.settings.gasUrl,{
       method:'POST',
-      mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body:JSON.stringify({action:'save',userId:(S.settings.name||'default').toLowerCase(),payload:S})
     });
   }catch(_){}
@@ -239,7 +248,7 @@ const save=()=>{
 async function loadFromGas(){
   if(!S.settings.gasUrl||!navigator.onLine)return;
   try{
-    const res=await fetch(`${S.settings.gasUrl}?action=load&userId=${encodeURIComponent((S.settings.name||'default').toLowerCase())}`);
+    const res=await fetch(`${S.settings.gasUrl}?userId=${encodeURIComponent((S.settings.name||'default').toLowerCase())}`);
     const data=await res.json();
     if(data.status==='ok'&&data.payload){
       S=data.payload;
@@ -260,7 +269,6 @@ const DAY=864e5;
 const fmtT=ms=>new Date(ms).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
 const fmtD=ms=>new Date(ms).toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'});
 const pad=n=>String(n).padStart(2,'0');
-const toLocalInput=ms=>{if(!ms)return'';const d=new Date(ms);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const listOf=id=>S.lists.find(l=>l.id===id)||S.lists[0];
 const myName=()=>(S.settings.name||'').trim()||'friend';
 function dayLabel(ms){
@@ -619,7 +627,7 @@ function vToday(){
   <div class="ring glass"><svg width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9aab"/><stop offset="1" stop-color="#e5b95a"/></linearGradient></defs>
   <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,150,46,.18)" stroke-width="7"/>
   <circle cx="32" cy="32" r="26" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}" transform="rotate(-90 32 32)"/></svg>
-  <div><b>${total?`${doneToday.length} of ${total} done`:'Nothing planned yet'}</b><div class="sub" style="margin:2px 0 0">${total&&doneToday.length===total?'All clear — lovely work 💗':'Tap + to add a task or reminder'}</div></div></div>
+  <div><b>${total?`${doneToday.length} of ${total} done`:'Nothing planned yet'}</b><div class="sub" style="margin:2px 0 0">${total&&doneToday.length===total?'All clear — lovely work 💗':'Tap + to add a task'}</div></div></div>
   ${section('Overdue',over,'over')}${section('Today',today)}${section('Inbox · no time',inbox)}
   ${!over.length&&!today.length&&!inbox.length?'<div class="empty glass" style="margin-top:14px">🌷<br>You are all caught up.</div>':''}
   ${doneToday.length?`<details style="margin-top:14px"><summary>Completed today (${doneToday.length})</summary><div class="card glass">${doneToday.map(rowHTML).join('')}</div></details>`:''}`;
@@ -651,29 +659,44 @@ function vSettings(){
    <label>Your name</label><input id="s_name" value="${esc(st.name)}" placeholder="Your name" autocomplete="off">
    <label>Avatar</label>
    <div class="chips">${[['robot','🤖 Norie'],['emoji','😊 Emoji'],['photo','🖼️ Photo / Memoji']].map(([k,n])=>`<button class="chip ${av.type===k?'on':''}" data-av="${k}">${n}</button>`).join('')}</div>
-   ${av.type==='robot'?'<p>Norie is your little robot assistant — she says hi whenever you open the app.</p>':''}${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
+   ${av.type==='robot'?'<p>Norie says hi whenever you open the app.</p>':''}${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
      <input id="s_emoji" value="${esc(av.emoji)}" maxlength="6" placeholder="…or paste any emoji" style="font-size:26px;text-align:center">`:''}
    ${av.type==='photo'?`<div class="btns" style="margin-top:4px"><button class="btn small" id="av_pick">Choose image…</button></div><input type="file" id="av_file" accept="image/*" hidden>
-     <p>iPhone Memoji: send a Memoji sticker in Messages, touch &amp; hold it, save it to Photos, then choose it here.</p>`:''}
-   <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Norie</span>${swHTML('s_greet',st.greet)}</div></div>
-  <div class="glass setrow" style="margin-top:12px"><b>☁️ Free Cloud Storage (Google Apps Script)</b>
-   <p>Paste your Apps Script Web App URL to sync tasks across all devices automatically. <b>Note: Sync depends on the "Your name" box above—it must be exactly the same on all devices.</b></p>
-   <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-   <div class="btns" style="margin-top:10px"><button class="btn main small" id="gassync">Sync Now</button></div>
-   <div class="status" id="gasstat"></div></div>
+     <p>iPhone Memoji: touch &amp; hold a Memoji sticker in Messages, save to Photos, then pick it here.</p>`:''}
+   <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Norie</span>${swHTML('s_greet',st.greet)}</div>
+  </div>
+
+  <details class="glass setrow" style="margin-top:12px">
+   <summary><b>☁️ Cloud Storage & Sync</b></summary>
+   <div class="setwrap">
+     <p>Paste your Apps Script Web App URL to sync tasks across all devices automatically. <b>Note: Sync depends on the "Your name" box above—it must be exactly the same on all devices.</b></p>
+     <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+     <div class="btns" style="margin-top:10px"><button class="btn main small" id="gassync">Sync Now</button></div>
+     <div class="status" id="gasstat"></div>
+   </div>
+  </details>
+
+  <details class="glass setrow" style="margin-top:12px">
+   <summary><b>✈️ Telegram Reminders (free)</b></summary>
+   <div class="setwrap">
+     <label>Bot token</label><input id="tgt" value="${esc(st.tgToken)}" placeholder="123456:ABC-DEF..." autocomplete="off">
+     <label>Chat ID</label><input id="tgc" value="${esc(st.tgChat)}" placeholder="123456789" inputmode="numeric">
+     <div class="btns"><button class="btn main small" id="tgsave">Save &amp; send test</button></div><div class="status" id="tgstat"></div>
+   </div>
+  </details>
+
   <div class="glass setrow" style="margin-top:12px"><b>📅 Calendar</b>
    <div class="grow" style="padding:10px 0 0;min-height:0"><span>Auto-add tasks that have a time</span>${swHTML('s_cal',st.autoCal)}</div>
    <p>Gives you an alert from your phone’s own Calendar even when Norie is closed or you’re offline.</p></div>
+
   <div class="glass setrow" style="margin-top:12px"><b>🔔 Notifications</b>
    <div class="status ${np==='granted'?'ok':'no'}">${np==='granted'?'Enabled ✓':np==='denied'?'Blocked — check browser settings':'Not enabled yet'}</div>
    <div class="btns" style="margin-top:12px"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div></div>
+
   <div class="glass setrow" style="margin-top:12px"><b>🔁 Keep reminding me</b><p>When a reminder is missed, nag again every…</p>
    <select id="nag" style="margin-top:10px">${[[0,'Don’t repeat'],[5,'5 minutes'],[10,'10 minutes'],[30,'30 minutes'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${st.nag===v?'selected':''}>${n}</option>`).join('')}</select>
    <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Play a soft chime</span>${swHTML('snd',st.sound)}</div></div>
-  <div class="glass setrow" style="margin-top:12px"><b>✈️ Telegram reminders (free)</b>
-   <label>Bot token</label><input id="tgt" value="${esc(st.tgToken)}" placeholder="123456:ABC-DEF..." autocomplete="off">
-   <label>Chat ID</label><input id="tgc" value="${esc(st.tgChat)}" placeholder="123456789" inputmode="numeric">
-   <div class="btns"><button class="btn main small" id="tgsave">Save &amp; send test</button></div><div class="status" id="tgstat"></div></div>
+
   <div class="glass setrow" style="margin-top:12px"><b>💾 Backup</b><p>Export local backup file.</p>
    <div class="btns" style="margin-top:12px"><button class="btn small" id="exp">Export</button><button class="btn small" id="imp">Import</button></div><input type="file" id="impf" accept=".json" hidden></div>`;
 }
@@ -703,10 +726,10 @@ $('#app').addEventListener('click',async e=>{
   if(T.id==='gassync'){
     const url = $('#gas_url').value.trim();
     S.settings.gasUrl = url;
-    localStorage.setItem(KEY, JSON.stringify(S)); // Save locally, but do not push yet
+    localStorage.setItem(KEY, JSON.stringify(S)); 
     $('#gasstat').className='status ok';$('#gasstat').textContent='Pulling from cloud...';
-    await loadFromGas(); // Pull first to prevent overwriting with empty PC data
-    await syncToGas(); // Then push local changes
+    await loadFromGas(); 
+    await syncToGas(); 
     $('#gasstat').textContent='Cloud sync updated ✓';
     return;
   }
