@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Petal</title>
+<title>Norie</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#fff3e6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Petal">
+<meta name="apple-mobile-web-app-title" content="Norie">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
@@ -59,12 +59,18 @@ h2.over{color:var(--pink)}
 .row{display:flex;gap:12px;align-items:center;padding:13px 16px;position:relative;cursor:pointer}
 .row+.row::before{content:"";position:absolute;top:0;left:56px;right:0;height:1px;background:rgba(160,120,100,.14)}
 .chk{flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--pink2);background:rgba(255,255,255,.6);display:grid;place-items:center;transition:.2s;box-shadow:inset 0 1px 2px rgba(255,255,255,.9)}
-.row.done .chk{background:linear-gradient(135deg,var(--pink),#ff9aab);border-color:transparent}
-.row.done .chk::after{content:"";width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
-.row.done .t{text-decoration:line-through;color:var(--muted)}
 .t{font-size:17px;font-weight:600;line-height:1.25}
 .m{font-size:13px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
 .m .late{color:var(--pink);font-weight:600}
+
+/* Compressed Completed Row */
+.row.done{padding:6px 16px;opacity:.75;min-height:36px}
+.row.done .chk{background:linear-gradient(135deg,var(--pink),#ff9aab);border-color:transparent;width:20px;height:20px}
+.row.done .chk::after{content:"";width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.row.done .t{text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:500}
+.row.done .m{display:none} /* Hides the metadata to compress height */
+.row.done+.row::before{left:46px}
+
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
 .p1{background:var(--gold)} .p2{background:var(--pink)}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
@@ -546,8 +552,8 @@ function icsFor(t){
   const rr={daily:'FREQ=DAILY',weekly:'FREQ=WEEKLY',monthly:'FREQ=MONTHLY'}[t.repeat];
   const e=s=>String(s||'').replace(/([,;\\])/g,'\\$1').replace(/\n/g,'\\n');
   const link=`${appURL()}#t=${t.id}`;
-  const desc=[t.notes,`Open in Petal: ${link}`].filter(Boolean).join('\n\n');
-  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Petal//EN','BEGIN:VEVENT',`UID:${t.id}@petal`,`DTSTAMP:${f(Date.now())}`,`DTSTART:${f(t.due)}`,`DTEND:${f(t.due+15*60000)}`,`SUMMARY:${e(t.title)}`,`DESCRIPTION:${e(desc)}`,`URL:${link}`,rr?`RRULE:${rr}`:null,
+  const desc=[t.notes,`Open in Norie: ${link}`].filter(Boolean).join('\n\n');
+  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Norie//EN','BEGIN:VEVENT',`UID:${t.id}@norie`,`DTSTAMP:${f(Date.now())}`,`DTSTART:${f(t.due)}`,`DTEND:${f(t.due+15*60000)}`,`SUMMARY:${e(t.title)}`,`DESCRIPTION:${e(desc)}`,`URL:${link}`,rr?`RRULE:${rr}`:null,
     'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${e(t.title)}`,'TRIGGER:PT0S','END:VALARM','END:VEVENT','END:VCALENDAR'].filter(Boolean);
   return lines.join('\r\n');
 }
@@ -640,24 +646,24 @@ function vLists(){
 const swHTML=(id,on)=>`<label class="sw"><input type="checkbox" id="${id}" ${on?'checked':''}><i></i></label>`;
 function vSettings(){
   const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone,st=S.settings,av=st.avatar,np='Notification' in window?Notification.permission:'unsupported';
-  return `<h1>Settings</h1><p class="sub">Make Petal yours</p>
+  return `<h1>Settings</h1><p class="sub">Make Norie yours</p>
   <div class="glass setrow"><b>👤 About you</b>
    <label>Your name</label><input id="s_name" value="${esc(st.name)}" placeholder="Your name" autocomplete="off">
    <label>Avatar</label>
    <div class="chips">${[['robot','🤖 Norie'],['emoji','😊 Emoji'],['photo','🖼️ Photo / Memoji']].map(([k,n])=>`<button class="chip ${av.type===k?'on':''}" data-av="${k}">${n}</button>`).join('')}</div>
-   ${av.type==='robot'?'<p>Norie is your little robot assistant — she says hi whenever you open Petal.</p>':''}${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
+   ${av.type==='robot'?'<p>Norie is your little robot assistant — she says hi whenever you open the app.</p>':''}${av.type==='emoji'?`<div class="chips">${['😊','😎','🥰','🌸','🦋','🐱','🦄','👑','🔥','💗'].map(x=>`<button class="chip em" data-em="${x}">${x}</button>`).join('')}</div>
      <input id="s_emoji" value="${esc(av.emoji)}" maxlength="6" placeholder="…or paste any emoji" style="font-size:26px;text-align:center">`:''}
    ${av.type==='photo'?`<div class="btns" style="margin-top:4px"><button class="btn small" id="av_pick">Choose image…</button></div><input type="file" id="av_file" accept="image/*" hidden>
      <p>iPhone Memoji: send a Memoji sticker in Messages, touch &amp; hold it, save it to Photos, then choose it here.</p>`:''}
-   <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Petal</span>${swHTML('s_greet',st.greet)}</div></div>
+   <div class="grow" style="padding:14px 0 0;min-height:0"><span>Greet me when I open Norie</span>${swHTML('s_greet',st.greet)}</div></div>
   <div class="glass setrow" style="margin-top:12px"><b>☁️ Free Cloud Storage (Google Apps Script)</b>
-   <p>Paste your Apps Script Web App URL to sync tasks across all devices automatically.</p>
+   <p>Paste your Apps Script Web App URL to sync tasks across all devices automatically. <b>Note: Sync depends on the "Your name" box above—it must be exactly the same on all devices.</b></p>
    <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
    <div class="btns" style="margin-top:10px"><button class="btn main small" id="gassync">Sync Now</button></div>
    <div class="status" id="gasstat"></div></div>
   <div class="glass setrow" style="margin-top:12px"><b>📅 Calendar</b>
    <div class="grow" style="padding:10px 0 0;min-height:0"><span>Auto-add tasks that have a time</span>${swHTML('s_cal',st.autoCal)}</div>
-   <p>Gives you an alert from your phone’s own Calendar even when Petal is closed or you’re offline.</p></div>
+   <p>Gives you an alert from your phone’s own Calendar even when Norie is closed or you’re offline.</p></div>
   <div class="glass setrow" style="margin-top:12px"><b>🔔 Notifications</b>
    <div class="status ${np==='granted'?'ok':'no'}">${np==='granted'?'Enabled ✓':np==='denied'?'Blocked — check browser settings':'Not enabled yet'}</div>
    <div class="btns" style="margin-top:12px"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div></div>
@@ -693,16 +699,19 @@ $('#app').addEventListener('click',async e=>{
   if(T.id==='newlist'){const n=prompt('List name?');if(n){const em=prompt('Emoji?','✨')||'✨';S.lists.push({id:uid(),name:n.trim(),e:em.trim().slice(0,4)});save();render()}return}
   const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list?')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
   if(T.id==='askperm'){await Notification.requestPermission();render();return}
-  if(T.id==='testn'){await sysNotify('Petal 🌸','Notifications working!','test');beep();toast({id:'x'},{title:'Test',body:'Reminders look like this.'});return}
+  if(T.id==='testn'){await sysNotify('Norie 🤖','Notifications working!','test');beep();toast({id:'x'},{title:'Test',body:'Reminders look like this.'});return}
   if(T.id==='gassync'){
-    S.settings.gasUrl=$('#gas_url').value.trim();save();
-    $('#gasstat').className='status ok';$('#gasstat').textContent='Syncing...';
-    await syncToGas();await loadFromGas();
+    const url = $('#gas_url').value.trim();
+    S.settings.gasUrl = url;
+    localStorage.setItem(KEY, JSON.stringify(S)); // Save locally, but do not push yet
+    $('#gasstat').className='status ok';$('#gasstat').textContent='Pulling from cloud...';
+    await loadFromGas(); // Pull first to prevent overwriting with empty PC data
+    await syncToGas(); // Then push local changes
     $('#gasstat').textContent='Cloud sync updated ✓';
     return;
   }
-  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🌸 Hi ${myName()}, it’s Norie! Petal is connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';return}
-  if(T.id==='exp'){download('petal-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,1),'application/json');return}
+  if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🤖 Hi ${myName()}, it’s Norie! Connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';return}
+  if(T.id==='exp'){download('norie-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,1),'application/json');return}
   if(T.id==='imp'){$('#impf').click();return}
 });
 $('#app').addEventListener('input',e=>{
