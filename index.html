@@ -69,6 +69,7 @@ h2.over{color:var(--pink)}
 .row.done .t{text-decoration:line-through;color:var(--muted);font-size:13px;font-weight:500}
 .row.done .m{display:none} 
 .row.done+.row::before{left:42px}
+.row.lk .chk{opacity:.4}
 
 /* ---- Today: super compact, single-line rows ---- */
 .cmp .hi{margin:0 2px;font-size:12.5px}
@@ -260,15 +261,63 @@ const sheetOpen=()=>document.getElementById('sheet').classList.contains('on');
 const getUserKey=()=>((S.settings.name||'yishak').trim()||'yishak').toLowerCase();
 const hasCloud=()=>!!(S.settings.gasUrl||'').trim();
 
-/* Automatic two-way sync: every change is pushed (debounced), cloud changes are pulled in the background. */
-let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle';
+/* Offline-first sync: every change is saved on this phone first and flagged "unsent".
+   Unsent changes upload automatically when you're online, and cloud + phone are merged task-by-task,
+   so nothing is ever overwritten or lost (even if two devices edited while offline). */
+S.deleted=S.deleted||{};S.dl=S.dl||{};
+const DIRTY='petal.dirty',CLOUDAT='petal.cloudAt';
+const setDirty=v=>{try{v?localStorage.setItem(DIRTY,'1'):localStorage.removeItem(DIRTY)}catch(_){}};
+const isDirty=()=>{try{return localStorage.getItem(DIRTY)==='1'}catch(_){return false}};
+const getCloudAt=()=>{try{return +localStorage.getItem(CLOUDAT)||0}catch(_){return 0}};
+const setCloudAt=v=>{try{localStorage.setItem(CLOUDAT,String(v||0))}catch(_){}};
+let SNAP=new Map();
+const tkey=t=>{const r={...t};delete r.u;return JSON.stringify(r)};
+function snapAll(){SNAP=new Map();S.tasks.forEach(t=>SNAP.set(t.id,tkey(t)))}
+snapAll();
+function stampTasks(){
+  const now=Date.now(),ids=new Set();
+  S.deleted=S.deleted||{};
+  S.tasks.forEach(t=>{ids.add(t.id);const k=tkey(t);if(SNAP.get(t.id)!==k){t.u=now;SNAP.set(t.id,k)}});
+  [...SNAP.keys()].forEach(id=>{if(!ids.has(id)){S.deleted[id]=now;SNAP.delete(id)}});
+  for(const id in S.deleted)if(now-S.deleted[id]>45*864e5)delete S.deleted[id];
+}
+function mergeStates(a,b){
+  const aNew=(a.updatedAt||0)>=(b.updatedAt||0);
+  const del={},dl={};
+  for(const o of [b.deleted||{},a.deleted||{}])for(const id in o)del[id]=Math.max(del[id]||0,o[id]);
+  for(const o of [b.dl||{},a.dl||{}])for(const id in o)dl[id]=Math.max(dl[id]||0,o[id]);
+  const map=new Map(),order=[];
+  for(const t of a.tasks||[]){map.set(t.id,t);order.push(t.id)}
+  for(const t of b.tasks||[]){
+    const x=map.get(t.id);
+    if(!x){map.set(t.id,t);order.push(t.id)}
+    else{const ua=x.u||0,ub=t.u||0;if(ub>ua||(ub===ua&&!aNew))map.set(t.id,t)}
+  }
+  const tasks=[];
+  for(const id of order){const t=map.get(id);if(del[id]&&del[id]>=(t.u||0))continue;tasks.push(t)}
+  const first=aNew?b:a,second=aNew?a:b,lm=new Map();
+  for(const l of first.lists||[])lm.set(l.id,l);
+  for(const l of second.lists||[])lm.set(l.id,l);
+  let lists=[...lm.values()].filter(l=>!dl[l.id]);
+  if(!lists.length)lists=structuredClone(defaultState.lists);
+  const w=aNew?a:b,settings=Object.assign({},defaultState.settings,w.settings||{});
+  settings.avatar=Object.assign({},defaultState.settings.avatar,(w.settings||{}).avatar||{});
+  settings.gasUrl=(a.settings||{}).gasUrl||settings.gasUrl;
+  settings.name=(a.settings||{}).name||settings.name;
+  return{updatedAt:Math.max(a.updatedAt||0,b.updatedAt||0),lists,tasks,settings,deleted:del,dl};
+}
+const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{}]);
+
+let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle',calMsg=null;
+function calNote(){if(calMsg==null)return'';if(calMsg==='ok')return' · Calendar ✓';if(calMsg==='old')return' · ⚠️ paste the new Code.gs for calendar';return' · ⚠️ Calendar: '+String(calMsg).slice(0,90)}
 function syncLabel(){
   if(!hasCloud())return'Not connected — paste your URL above';
-  if(syncState==='err')return'Offline — will retry automatically';
   if(syncState==='busy')return'Syncing…';
-  return lastSyncOk?'Synced automatically ✓ '+fmtT(lastSyncOk):'Connecting…';
+  if(syncState==='err'||(isDirty()&&!navigator.onLine))return'Saved on this phone ✓ — uploads automatically when online';
+  if(isDirty())return'Saving to cloud…';
+  return (lastSyncOk?'Synced automatically ✓ '+fmtT(lastSyncOk):'Connecting…')+calNote();
 }
-function paintSync(){const el=document.getElementById('gasstat');if(el){el.className='status '+(syncState==='err'?'no':'ok');el.textContent=syncLabel()}}
+function paintSync(){const el=document.getElementById('gasstat');if(el){el.className='status ok';el.textContent=syncLabel()}}
 async function gasCall(body){
   const url=(S.settings.gasUrl||'').trim();
   if(!url||!navigator.onLine)throw new Error('off');
@@ -284,15 +333,17 @@ async function gasCall(body){
 async function syncToGas(){
   if(!hasCloud())return false;
   if(syncBusy){syncQueued=true;return false}
+  if(!navigator.onLine){syncState='err';paintSync();return false}
   syncBusy=true;syncState='busy';paintSync();
-  let stale=false;
+  const sent=S.updatedAt;let stale=false;
   try{
-    const r=await gasCall({action:'save',payload:S});
+    const r=await gasCall({action:'save',payload:S,base:getCloudAt()});
     if(r&&r.status==='stale')stale=true;
-    syncState='ok';lastSyncOk=Date.now();
+    else if(r&&r.status==='error')throw new Error('srv');
+    else{setCloudAt(sent);if(S.updatedAt===sent)setDirty(false);syncState='ok';lastSyncOk=Date.now();calMsg=(r&&r.cal!==undefined)?r.cal:'old'}
   }catch(_){syncState='err'}
   syncBusy=false;paintSync();
-  if(stale){await loadFromGas(true);return true}
+  if(stale){syncState='ok';await loadFromGas(true);return true}
   if(syncQueued){syncQueued=false;syncToGas()}
   return syncState==='ok';
 }
@@ -301,43 +352,49 @@ function flushBeacon(){
   const url=(S.settings.gasUrl||'').trim();
   if(!pushT||!url)return;
   clearTimeout(pushT);pushT=null;
-  try{navigator.sendBeacon(url,new Blob([JSON.stringify({action:'save',userId:getUserKey(),payload:S})],{type:'text/plain;charset=utf-8'}))}catch(_){}
+  try{navigator.sendBeacon(url,new Blob([JSON.stringify({action:'save',userId:getUserKey(),payload:S,base:getCloudAt()})],{type:'text/plain;charset=utf-8'}))}catch(_){}
 }
 
 const save=()=>{
   try{
+    stampTasks();
     S.updatedAt=Date.now();
     try{S.settings.tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(_){}
-    localStorage.setItem(KEY,JSON.stringify(S));
-    if(hasCloud())schedulePush();
+    localStorage.setItem(KEY,JSON.stringify(S));   /* 1) always saved on the phone first */
+    setDirty(true);                                 /* 2) remembered as "not uploaded yet" */
+    if(hasCloud())schedulePush();                   /* 3) uploaded as soon as there is internet */
+    paintSync();
   }catch(e){alert('Storage full — clear space.')}
 };
 
+function applyCloud(cloud){
+  const ct=cloud.updatedAt||0,m=mergeStates(S,cloud);
+  const mine=dataSig(S),theirs=dataSig(cloud),merged=dataSig(m);
+  const settingsFromCloud=ct>(S.updatedAt||0);
+  const localDiffers=merged!==mine||settingsFromCloud;
+  const cloudDiffers=merged!==theirs||(isDirty()&&(S.updatedAt||0)>ct);
+  setCloudAt(ct);
+  if(localDiffers)S=m;
+  if(cloudDiffers){S.updatedAt=Date.now();setDirty(true)}
+  else{S.updatedAt=Math.max(S.updatedAt||0,ct);setDirty(false)}
+  localStorage.setItem(KEY,JSON.stringify(S));
+  snapAll();
+  if(cloudDiffers)schedulePush();
+  if(localDiffers&&!isTyping()&&!sheetOpen())render();
+  return localDiffers;
+}
 async function loadFromGas(force=false){
   if(!hasCloud()||!navigator.onLine)return false;
   try{
-    const d=await gasCall({action:'load',since:force?0:(S.updatedAt||0)});
+    const d=await gasCall({action:'load',since:force?0:getCloudAt()});
     syncState='ok';lastSyncOk=Date.now();paintSync();
     if(!d)return false;
     if(d.status==='ok'&&d.payload){
-      const ct=d.payload.updatedAt||0,lt=S.updatedAt||0;
-      if(force||ct>lt){
-        if(!force&&(sheetOpen()||isTyping()))return false; // never overwrite while editing
-        const keepUrl=S.settings.gasUrl;
-        S=d.payload;
-        S.settings=Object.assign({},defaultState.settings,S.settings||{});
-        S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});
-        S.settings.gasUrl=keepUrl;
-        localStorage.setItem(KEY,JSON.stringify(S));
-        if(!isTyping()&&!sheetOpen())render();
-        return true;
-      }
-      if(ct<lt&&!pushT&&!syncBusy)schedulePush();
-    }else if(d.status==='same'){
-      if((d.updatedAt||0)<(S.updatedAt||0)&&!pushT&&!syncBusy)schedulePush();
-    }else if(d.status==='empty'){
-      if(S.tasks.length&&!pushT&&!syncBusy)schedulePush();
+      if(sheetOpen()||isTyping())return false;   /* never swap data while you're editing */
+      return applyCloud(d.payload);
     }
+    if(d.status==='same'){if(isDirty()&&!pushT&&!syncBusy)schedulePush();return false}
+    if(d.status==='empty'&&S.tasks.length&&!pushT&&!syncBusy){setDirty(true);schedulePush()}
     return false;
   }catch(_){syncState='err';paintSync();return false}
 }
@@ -606,8 +663,10 @@ function fire(t){
   beep();if(navigator.vibrate)navigator.vibrate([200,100,200]);
   toast(t,{title:t.title,body:`${t.fires>1?'Reminder #'+t.fires+' · ':''}${t.due?fmtT(t.due):''} ${t.notes||''}`});
 }
+let lastDay=sod(Date.now());
 function tick(){
   const now=Date.now();let any=false;
+  if(sod(now)!==lastDay){lastDay=sod(now);if(!isTyping()&&!sheetOpen())render()}
   for(const t of S.tasks){
     if(t.done||!t.due)continue;
     const nag=t.nag??S.settings.nag;
@@ -632,15 +691,37 @@ addEventListener('online',()=>{loadFromGas();if(hasCloud())schedulePush()});
 setInterval(()=>{if(!document.hidden&&!isTyping()&&!sheetOpen())loadFromGas()},8000);
 
 /* ---------- task ops ---------- */
+function flash(msg){
+  const el=document.createElement('div');el.className='toast glass';
+  el.innerHTML=`<span style="font-size:14px;font-weight:600">${esc(msg)}</span>`;
+  $('#toasts').prepend(el);setTimeout(()=>el.remove(),3200);
+}
+const isRep=t=>!!(t.repeat&&t.repeat!=='none'&&t.due);
+const isLocked=t=>!t.done&&isRep(t)&&sod(t.due)>sod(Date.now());
 function complete(id){
   const t=S.tasks.find(x=>x.id===id);if(!t)return;
-  if(t.repeat&&t.repeat!=='none'&&t.due){
+  const now=Date.now();
+  /* un-tick a "done today" record of a repeating task: remove it and bring the task back to that time */
+  if(t.done&&t.spawn){
+    const p=S.tasks.find(x=>x.id===t.spawn);
+    if(p){
+      S.tasks=S.tasks.filter(x=>x!==t);
+      if(t.due&&p.due>t.due){p.due=t.due;p.lastFired=null;p.fires=0;p.snooze=null}
+      save();render();return;
+    }
+  }
+  /* a repeating task that belongs to a future day can't be done early */
+  if(isLocked(t)){flash(`🔒 Locked — it opens ${dayLabel(t.due)} at 12:00 AM`);return}
+  if(isRep(t)){
+    const copy={...t,id:uid(),repeat:'none',done:true,doneAt:now,spawn:t.id};delete copy.u;
+    S.tasks.push(copy);
     const d=new Date(t.due);
-    do{ if(t.repeat==='daily')d.setDate(d.getDate()+1); else if(t.repeat==='weekly')d.setDate(d.getDate()+7); else d.setMonth(d.getMonth()+1);}while(d.getTime()<=Date.now());
+    const step=()=>{if(t.repeat==='daily')d.setDate(d.getDate()+1);else if(t.repeat==='weekly')d.setDate(d.getDate()+7);else d.setMonth(d.getMonth()+1)};
+    step();while(d.getTime()<sod(now))step();
     t.due=d.getTime();t.lastFired=null;t.fires=0;t.snooze=null;
-  }else{t.done=!t.done;t.doneAt=t.done?Date.now():null}
+  }else{t.done=!t.done;t.doneAt=t.done?now:null}
   save();render();
-  if(typeof norieCheer==='function'&&(t.done||(t.repeat&&t.repeat!=='none')))norieCheer();
+  if(typeof norieCheer==='function'&&(t.done||isRep(t)))norieCheer();
 }
 const appURL=()=>location.href.split('#')[0];
 function icsFor(t){
@@ -691,13 +772,15 @@ function rowHTML(t,c){
     const when=t.due?(sod(t.due)===sod(now)?fmtT(t.due):dayLabel(t.due)+' '+fmtT(t.due)):'';
     return `<div class="row c ${t.done?'done':''}" data-id="${t.id}"><div class="chk" data-c="${t.id}"></div><div class="t">${esc(t.title)}</div><div class="m">${t.prio?`<i class="dot p${t.prio}"></i>`:''}${t.repeat&&t.repeat!=='none'?'<span>🔁</span>':''}<span>${L.e}</span>${when?`<span class="${late?'late':''}">${when}</span>`:''}</div></div>`;
   }
-  return `<div class="row ${t.done?'done':''}" data-id="${t.id}">
+  const lk=isLocked(t);
+  return `<div class="row ${t.done?'done':''}${lk?' lk':''}" data-id="${t.id}">
     <div class="chk" data-c="${t.id}"></div>
     <div style="min-width:0;flex:1"><div class="t">${esc(t.title)}</div>
     <div class="m">${t.prio?`<span><i class="dot p${t.prio}"></i>${t.prio===2?'Important':'Medium'}</span>`:''}
       <span>${L.e} ${esc(L.name)}</span>
       ${t.due?`<span class="${late?'late':''}">${dayLabel(t.due)}, ${fmtT(t.due)}</span>`:''}
       ${t.repeat&&t.repeat!=='none'?`<span>🔁 ${t.repeat}</span>`:''}
+      ${lk?`<span>🔒 opens ${dayLabel(t.due)}</span>`:''}
     </div></div></div>`;
 }
 const sortT=(a,b)=>(a.due??1e15)-(b.due??1e15)||b.prio-a.prio;
@@ -1275,6 +1358,8 @@ function initNorie(){
 
 /* ---------- boot ---------- */
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+(function(){const lim=Date.now()-30*864e5,n=S.tasks.length;S.tasks=S.tasks.filter(t=>!(t.spawn&&t.done&&(t.doneAt||0)<lim));if(S.tasks.length!==n)save()})();
+if(hasCloud()&&(isDirty()||(!getCloudAt()&&S.tasks.length))){setDirty(true);schedulePush()}
 render();tick();loadFromGas();
 const fromLink=openFromHash();
 initNorie();
