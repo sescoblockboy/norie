@@ -95,8 +95,8 @@ h2.over{color:var(--pink)}
 .fab:active{transform:scale(.94)}
 #shade{position:fixed;inset:0;background:rgba(80,40,50,.28);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);z-index:30;opacity:0;pointer-events:none;visibility:hidden;transition:opacity .25s,visibility 0s .25s}
 #shade.on{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .25s}
-#sheet{position:fixed;left:0;right:0;margin:0 auto;bottom:-105%;width:min(680px,100%);max-height:92vh;overflow:auto;z-index:31;padding:18px 18px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.8);visibility:hidden;transition:bottom .32s cubic-bezier(.2,.9,.25,1),visibility 0s .32s}
-#sheet.on{bottom:0;visibility:visible;transition:bottom .32s cubic-bezier(.2,.9,.25,1)}
+#sheet{position:fixed;left:0;right:0;margin:0 auto;bottom:-105%;width:min(680px,100%);max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:31;padding:18px 18px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.96);pointer-events:none;transition:bottom .28s cubic-bezier(.2,.9,.25,1)}
+#sheet.on{bottom:0;pointer-events:auto}
 #sheet .grab{width:42px;height:5px;border-radius:5px;background:rgba(120,90,90,.25);margin:0 auto 14px}
 .sh-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sh-top b{font-size:22px}
@@ -227,6 +227,7 @@ a{color:var(--pink)}
 /* ---------- storage & sync ---------- */
 const KEY='petal.v1';
 const defaultState={
+  updatedAt:0,
   lists:[{id:'personal',name:'Personal',e:'🌸'},{id:'work',name:'Work',e:'💼'},{id:'home',name:'Home',e:'🏡'},{id:'shop',name:'Shopping',e:'🛍️'},{id:'health',name:'Health',e:'💗'}],
   tasks:[],
   settings:{tgToken:'',tgChat:'',gasUrl:'',nag:10,sound:true,name:'Yishak',greet:true,autoCal:true,robotPos:null,avatar:{type:'robot',emoji:'😊',photo:''}}
@@ -236,10 +237,11 @@ try{S=JSON.parse(localStorage.getItem(KEY))||structuredClone(defaultState)}catch
 S.settings=Object.assign({},defaultState.settings,S.settings||{});
 S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});
 
+const isTyping=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+
 async function syncToGas(){
   if(!S.settings.gasUrl||!navigator.onLine)return;
   try{
-    // Using plain text bypasses strict browser CORS preflight blocks
     await fetch(S.settings.gasUrl,{
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -250,20 +252,28 @@ async function syncToGas(){
 
 const save=()=>{
   try{
+    S.updatedAt=Date.now();
     localStorage.setItem(KEY,JSON.stringify(S));
     syncToGas();
   }catch(e){alert('Storage full — clear space.')}
 };
 
-async function loadFromGas(){
+async function loadFromGas(force=false){
   if(!S.settings.gasUrl||!navigator.onLine)return;
   try{
-    const res=await fetch(`${S.settings.gasUrl}?userId=${encodeURIComponent((S.settings.name||'default').toLowerCase())}`);
+    const res=await fetch(`${S.settings.gasUrl}?userId=${encodeURIComponent((S.settings.name||'default').toLowerCase())}&t=${Date.now()}`);
     const data=await res.json();
     if(data.status==='ok'&&data.payload){
-      S=data.payload;
-      localStorage.setItem(KEY,JSON.stringify(S));
-      render();
+      const cloudTime=data.payload.updatedAt||0;
+      const localTime=S.updatedAt||0;
+      if(force||cloudTime>localTime){
+        const keepUrl=S.settings.gasUrl;
+        S=data.payload;
+        S.settings=Object.assign({},defaultState.settings,S.settings||{});
+        if(!S.settings.gasUrl)S.settings.gasUrl=keepUrl;
+        localStorage.setItem(KEY,JSON.stringify(S));
+        if(!isTyping())render();
+      }
     }
   }catch(_){}
 }
@@ -544,14 +554,15 @@ function tick(){
   if(any)render();
 }
 setInterval(tick,15000);
-let saveT;const saveSoon=()=>{clearTimeout(saveT);saveT=setTimeout(save,400)};
-addEventListener('pagehide',()=>{clearTimeout(saveT);save()});
+let saveT;const saveSoon=()=>{clearTimeout(saveT);saveT=setTimeout(()=>{saveT=null;save()},400)};
+addEventListener('pagehide',()=>{if(saveT){clearTimeout(saveT);saveT=null;save()}});
 let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){hiddenAt=Date.now();return}
-  tick();render();
+  loadFromGas();tick();if(!isTyping())render();
   if(S.settings.greet&&hiddenAt&&Date.now()-hiddenAt>30*60000)showHello();
 });
+setInterval(()=>{if(!document.hidden&&!isTyping())loadFromGas()},8000);
 
 /* ---------- task ops ---------- */
 function complete(id){
