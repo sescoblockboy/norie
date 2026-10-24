@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#fff3e6">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Norie">
-<link rel="manifest" href="manifest.json?v=12">
+<link rel="manifest" href="manifest.json?v=13">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <style>
@@ -39,8 +39,9 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;tr
   box-shadow:0 10px 32px rgba(200,150,46,.14), 0 2px 8px rgba(244,104,127,.08), inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(255,255,255,.3);
   border-radius:var(--r);
 }
-.bar.glass,.toast.glass{-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
-.bar.glass{background:var(--glass)}
+/* perf: no live backdrop blur on the always-visible tab bar (the robot moves over it) */
+.toast.glass{-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
+.bar.glass{background:rgba(255,248,238,.92)}
 #sheet .glass{background:var(--glass)}
 #app{max-width:680px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 120px)}
 h1{font-size:34px;letter-spacing:-.8px;margin:6px 4px 2px;font-weight:800}
@@ -68,6 +69,28 @@ h2.over{color:var(--pink)}
 .row.done .t{text-decoration:line-through;color:var(--muted);font-size:13px;font-weight:500}
 .row.done .m{display:none} 
 .row.done+.row::before{left:42px}
+
+/* ---- Today: super compact, single-line rows ---- */
+.cmp .hi{margin:0 2px;font-size:12.5px}
+.cmp h1{font-size:25px;margin:0 2px;letter-spacing:-.6px}
+.cmp .sub{font-size:12.5px;margin:0 2px 6px}
+.cmp h2{font-size:10.5px;margin:10px 8px 4px;letter-spacing:.8px}
+.cmp .card{padding:2px 0;border-radius:16px}
+.cmp .row{padding:6px 12px;gap:9px}
+.cmp .row+.row::before{left:41px}
+.cmp .chk{width:20px;height:20px;border-width:1.8px}
+.cmp .row .t{flex:1;min-width:0;font-size:14px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp .row .m{flex:none;margin:0;font-size:11px;gap:5px;flex-wrap:nowrap;align-items:center;white-space:nowrap}
+.cmp .dot{margin:0}
+.cmp .row.done{padding:3px 12px;min-height:0}
+.cmp .row.done .chk{width:16px;height:16px}
+.cmp .row.done .t{font-size:12px}
+.cmp .row.done+.row::before{left:37px}
+.cmp .ring{padding:7px 12px;gap:10px;margin:2px 0 0;border-radius:16px}
+.cmp .ring b{font-size:14px}
+.cmp .ring .sub{font-size:11.5px;margin:0}
+.cmp .empty{padding:14px 12px;font-size:14px;border-radius:16px}
+.cmp details summary{font-size:12px;padding:6px 8px 2px;color:var(--muted)}
 
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
 .p1{background:var(--gold)} .p2{background:var(--pink)}
@@ -150,10 +173,10 @@ details[open] summary::after{transform:rotate(180deg)}
 details .setwrap{padding-top:12px;animation:drop .25s cubic-bezier(.2,.9,.25,1)}
 a{color:var(--pink)}
 
-/* robot optimizations */
+/* robot optimizations (shadow filter removed: it re-rasterised every frame on phones) */
 .rbt{width:100%;height:100%;perspective:520px;perspective-origin:50% 45%;transform:translateZ(0)}
 .rbt-3d{width:100%;height:100%;transform-style:preserve-3d;will-change:transform}
-.rbt svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 7px 8px rgba(190,70,95,.28));transform:translateZ(0)}
+.rbt svg{width:100%;height:100%;display:block;overflow:visible;transform:translateZ(0)}
 .r-iris{transform-box:fill-box;transform-origin:center;animation:spin 24s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #norie{position:fixed;left:0;top:0;width:82px;height:82px;z-index:25;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;will-change:transform}
@@ -233,57 +256,90 @@ S.settings=Object.assign({},defaultState.settings,S.settings||{});
 S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});
 
 const isTyping=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+const sheetOpen=()=>document.getElementById('sheet').classList.contains('on');
 const getUserKey=()=>((S.settings.name||'yishak').trim()||'yishak').toLowerCase();
+const hasCloud=()=>!!(S.settings.gasUrl||'').trim();
 
-async function syncToGas(){
+/* Automatic two-way sync: every change is pushed (debounced), cloud changes are pulled in the background. */
+let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle';
+function syncLabel(){
+  if(!hasCloud())return'Not connected — paste your URL above';
+  if(syncState==='err')return'Offline — will retry automatically';
+  if(syncState==='busy')return'Syncing…';
+  return lastSyncOk?'Synced automatically ✓ '+fmtT(lastSyncOk):'Connecting…';
+}
+function paintSync(){const el=document.getElementById('gasstat');if(el){el.className='status '+(syncState==='err'?'no':'ok');el.textContent=syncLabel()}}
+async function gasCall(body){
   const url=(S.settings.gasUrl||'').trim();
-  if(!url||!navigator.onLine)return false;
+  if(!url||!navigator.onLine)throw new Error('off');
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),20000);
   try{
-    const res=await fetch(url,{
-      method:'POST',
-      redirect:'follow',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'save',userId:getUserKey(),payload:S})
-    });
-    return res.ok;
-  }catch(_){return false;}
+    const res=await fetch(url,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify(Object.assign({userId:getUserKey()},body)),signal:ctl.signal});
+    if(!res.ok)throw new Error('http');
+    const tx=await res.text();
+    try{return JSON.parse(tx)}catch(_){return{status:'ok'}}
+  }finally{clearTimeout(to)}
+}
+async function syncToGas(){
+  if(!hasCloud())return false;
+  if(syncBusy){syncQueued=true;return false}
+  syncBusy=true;syncState='busy';paintSync();
+  let stale=false;
+  try{
+    const r=await gasCall({action:'save',payload:S});
+    if(r&&r.status==='stale')stale=true;
+    syncState='ok';lastSyncOk=Date.now();
+  }catch(_){syncState='err'}
+  syncBusy=false;paintSync();
+  if(stale){await loadFromGas(true);return true}
+  if(syncQueued){syncQueued=false;syncToGas()}
+  return syncState==='ok';
+}
+function schedulePush(){clearTimeout(pushT);pushT=setTimeout(()=>{pushT=null;syncToGas()},1200)}
+function flushBeacon(){
+  const url=(S.settings.gasUrl||'').trim();
+  if(!pushT||!url)return;
+  clearTimeout(pushT);pushT=null;
+  try{navigator.sendBeacon(url,new Blob([JSON.stringify({action:'save',userId:getUserKey(),payload:S})],{type:'text/plain;charset=utf-8'}))}catch(_){}
 }
 
 const save=()=>{
   try{
     S.updatedAt=Date.now();
+    try{S.settings.tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(_){}
     localStorage.setItem(KEY,JSON.stringify(S));
-    syncToGas();
+    if(hasCloud())schedulePush();
   }catch(e){alert('Storage full — clear space.')}
 };
 
 async function loadFromGas(force=false){
-  const url=(S.settings.gasUrl||'').trim();
-  if(!url||!navigator.onLine)return false;
+  if(!hasCloud()||!navigator.onLine)return false;
   try{
-    const res=await fetch(url,{
-      method:'POST',
-      redirect:'follow',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'load',userId:getUserKey()})
-    });
-    const data=await res.json();
-    if(data&&data.status==='ok'&&data.payload){
-      const cloudTime=data.payload.updatedAt||0;
-      const localTime=S.updatedAt||0;
-      if(force||cloudTime>localTime){
+    const d=await gasCall({action:'load',since:force?0:(S.updatedAt||0)});
+    syncState='ok';lastSyncOk=Date.now();paintSync();
+    if(!d)return false;
+    if(d.status==='ok'&&d.payload){
+      const ct=d.payload.updatedAt||0,lt=S.updatedAt||0;
+      if(force||ct>lt){
+        if(!force&&(sheetOpen()||isTyping()))return false; // never overwrite while editing
         const keepUrl=S.settings.gasUrl;
-        S=data.payload;
+        S=d.payload;
         S.settings=Object.assign({},defaultState.settings,S.settings||{});
         S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avatar||{});
         S.settings.gasUrl=keepUrl;
         localStorage.setItem(KEY,JSON.stringify(S));
-        if(!isTyping())render();
+        if(!isTyping()&&!sheetOpen())render();
         return true;
       }
+      if(ct<lt&&!pushT&&!syncBusy)schedulePush();
+    }else if(d.status==='same'){
+      if((d.updatedAt||0)<(S.updatedAt||0)&&!pushT&&!syncBusy)schedulePush();
+    }else if(d.status==='empty'){
+      if(S.tasks.length&&!pushT&&!syncBusy)schedulePush();
     }
     return false;
-  }catch(_){return false;}
+  }catch(_){syncState='err';paintSync();return false}
 }
 
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
@@ -469,13 +525,14 @@ let helloT,helloC;
 function showHello(keep){
   clearTimeout(helloC);
   $('#hello').innerHTML=`<button class="x hx" aria-label="Close">✕</button><div class="hwrap"><div class="hello-av">${avatarHTML()}</div><div class="hbub off" id="hbub"></div></div>`;
+  RBc=null;
   $('#hello').classList.add('on');
   clearTimeout(helloT);
   NR.clicks=[];NR.bigUntil=0;NR.bigExpr='happy';
   if(keep===true)nHSay(`Hi ${myName()}! Poke me… I dare you 😏`,3200);
   else helloT=setTimeout(hideHello,1500);
 }
-function hideHello(){clearTimeout(helloT);$('#hello').classList.remove('on');clearTimeout(helloC);helloC=setTimeout(()=>{if(!$('#hello').classList.contains('on'))$('#hello').innerHTML=''},400)}
+function hideHello(){clearTimeout(helloT);$('#hello').classList.remove('on');clearTimeout(helloC);helloC=setTimeout(()=>{if(!$('#hello').classList.contains('on')){$('#hello').innerHTML='';RBc=null}},400)}
 $('#hello').onclick=e=>{
   if(e.target.closest('.hello-av')&&S.settings.avatar.type==='robot'){clearTimeout(helloT);nPoke();return}
   hideHello();
@@ -544,7 +601,8 @@ function fire(t){
   const body=`${listOf(t.list).e} ${listOf(t.list).name} · ${t.due?fmtT(t.due):''}${t.notes?'\n'+t.notes:''}`;
   t.lastFired=Date.now();t.fires=(t.fires||0)+1;t.snooze=null;save();
   sysNotify(t.title,body,t.id);
-  sendTelegram(`🔔 Norie here! Hey ${myName()}, reminder:\n${t.title}\n${listOf(t.list).e} ${listOf(t.list).name}${t.due?' • '+dayLabel(t.due)+' '+fmtT(t.due):''}${t.fires>1?`\n(reminder #${t.fires})`:''}`);
+  /* With Cloud Sync on, the cloud script sends Telegram reminders itself (works with the app closed). */
+  if(!hasCloud())sendTelegram(`🔔 Norie here! Hey ${myName()}, reminder:\n${t.title}\n${listOf(t.list).e} ${listOf(t.list).name}${t.due?' • '+dayLabel(t.due)+' '+fmtT(t.due):''}${t.fires>1?`\n(reminder #${t.fires})`:''}`);
   beep();if(navigator.vibrate)navigator.vibrate([200,100,200]);
   toast(t,{title:t.title,body:`${t.fires>1?'Reminder #'+t.fires+' · ':''}${t.due?fmtT(t.due):''} ${t.notes||''}`});
 }
@@ -563,14 +621,15 @@ function tick(){
 }
 setInterval(tick,15000);
 let saveT;const saveSoon=()=>{clearTimeout(saveT);saveT=setTimeout(()=>{saveT=null;save()},500)};
-addEventListener('pagehide',()=>{if(saveT){clearTimeout(saveT);saveT=null;save()}});
+addEventListener('pagehide',()=>{if(saveT){clearTimeout(saveT);saveT=null;save()}flushBeacon()});
 let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden){hiddenAt=Date.now();return}
-  loadFromGas();tick();if(!isTyping())render();
+  if(document.hidden){hiddenAt=Date.now();flushBeacon();return}
+  loadFromGas();tick();if(!isTyping()&&!sheetOpen())render();
   if(S.settings.greet&&hiddenAt&&Date.now()-hiddenAt>30*60000)showHello();
 });
-setInterval(()=>{if(!document.hidden&&!isTyping())loadFromGas()},8000);
+addEventListener('online',()=>{loadFromGas();if(hasCloud())schedulePush()});
+setInterval(()=>{if(!document.hidden&&!isTyping()&&!sheetOpen())loadFromGas()},8000);
 
 /* ---------- task ops ---------- */
 function complete(id){
@@ -625,9 +684,13 @@ function bar(){
 }
 $('#bar').onclick=e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.t;curList=null;render();scrollTo({top:0})};
 
-function rowHTML(t){
+function rowHTML(t,c){
   const now=Date.now(),late=t.due&&!t.done&&t.due<now;
   const L=listOf(t.list);
+  if(c){
+    const when=t.due?(sod(t.due)===sod(now)?fmtT(t.due):dayLabel(t.due)+' '+fmtT(t.due)):'';
+    return `<div class="row c ${t.done?'done':''}" data-id="${t.id}"><div class="chk" data-c="${t.id}"></div><div class="t">${esc(t.title)}</div><div class="m">${t.prio?`<i class="dot p${t.prio}"></i>`:''}${t.repeat&&t.repeat!=='none'?'<span>🔁</span>':''}<span>${L.e}</span>${when?`<span class="${late?'late':''}">${when}</span>`:''}</div></div>`;
+  }
   return `<div class="row ${t.done?'done':''}" data-id="${t.id}">
     <div class="chk" data-c="${t.id}"></div>
     <div style="min-width:0;flex:1"><div class="t">${esc(t.title)}</div>
@@ -638,9 +701,9 @@ function rowHTML(t){
     </div></div></div>`;
 }
 const sortT=(a,b)=>(a.due??1e15)-(b.due??1e15)||b.prio-a.prio;
-function section(title,arr,cls=''){
+function section(title,arr,cls='',c=false){
   if(!arr.length)return'';
-  return `<h2 class="${cls}">${title}</h2><div class="card glass">${arr.map(rowHTML).join('')}</div>`;
+  return `<h2 class="${cls}">${title}</h2><div class="card glass">${arr.map(x=>rowHTML(x,c)).join('')}</div>`;
 }
 function vToday(){
   const t0=sod(Date.now()),open=S.tasks.filter(t=>!t.done);
@@ -651,15 +714,15 @@ function vToday(){
   const total=today.length+doneToday.length+over.length;
   const pct=total?doneToday.length/total:0;
   const C=2*Math.PI*26;
-  return `<div class="hdr"><div><p class="hi">${timeWord()}</p><h1 style="margin-top:0">${esc(myName())} ✨</h1><p class="sub" style="margin-bottom:10px">${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}</p></div>
+  return `<div class="cmp"><div class="hdr"><div><p class="hi">${timeWord()}</p><h1>${esc(myName())} ✨</h1><p class="sub">${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}</p></div>
   <div class="mini-av${S.settings.avatar.type==='robot'?' ph':''}" data-hello title="Norie says hi">${S.settings.avatar.type==='robot'?'':avatarHTML()}</div></div>
-  <div class="ring glass"><svg width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9aab"/><stop offset="1" stop-color="#e5b95a"/></linearGradient></defs>
-  <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,150,46,.18)" stroke-width="7"/>
-  <circle cx="32" cy="32" r="26" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}" transform="rotate(-90 32 32)"/></svg>
-  <div><b>${total?`${doneToday.length} of ${total} done`:'Nothing planned yet'}</b><div class="sub" style="margin:2px 0 0">${total&&doneToday.length===total?'All clear — lovely work 💗':'Tap + to add a task'}</div></div></div>
-  ${section('Overdue',over,'over')}${section('Today',today)}${section('Inbox · no time',inbox)}
-  ${!over.length&&!today.length&&!inbox.length?'<div class="empty glass" style="margin-top:14px">🌷<br>You are all caught up.</div>':''}
-  ${doneToday.length?`<details style="margin-top:14px"><summary>Completed today (${doneToday.length})</summary><div class="card glass">${doneToday.map(rowHTML).join('')}</div></details>`:''}`;
+  <div class="ring glass"><svg width="38" height="38" viewBox="0 0 64 64"><defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9aab"/><stop offset="1" stop-color="#e5b95a"/></linearGradient></defs>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,150,46,.18)" stroke-width="8"/>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="url(#gg)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}" transform="rotate(-90 32 32)"/></svg>
+  <div><b>${total?`${doneToday.length} of ${total} done`:'Nothing planned yet'}</b><div class="sub">${total&&doneToday.length===total?'All clear — lovely work 💗':'Tap + to add a task'}</div></div></div>
+  ${section('Overdue',over,'over',true)}${section('Today',today,'',true)}${section('Inbox · no time',inbox,'',true)}
+  ${!over.length&&!today.length&&!inbox.length?'<div class="empty glass" style="margin-top:10px">🌷 You are all caught up.</div>':''}
+  ${doneToday.length?`<details><summary>Completed today (${doneToday.length})</summary><div class="card glass">${doneToday.map(x=>rowHTML(x,true)).join('')}</div></details>`:''}</div>`;
 }
 function vUpcoming(){
   const t1=sod(Date.now())+DAY;
@@ -695,21 +758,18 @@ function vSettings(){
   </div>
 
   <details class="glass setrow" style="margin-top:12px" ${st.gasUrl?'':'open'}>
-   <summary><b>☁️ Cloud Storage & Sync</b></summary>
+   <summary><b>☁️ Cloud Sync (automatic)</b></summary>
    <div class="setwrap">
-     <p>Paste your Apps Script Web App URL. Make sure <b>Your name</b> above is identical on your Phone and PC.</p>
+     <p>Paste your Apps Script Web App URL once. Changes upload and download by themselves — no buttons. Use the same <b>Your name</b> on every device.</p>
      <label>Web App URL</label><input id="gas_url" value="${esc(st.gasUrl||'')}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-     <div class="btns" style="margin-top:10px">
-       <button class="btn main small" id="gaspull">⬇️ Pull from Cloud</button>
-       <button class="btn gold small" id="gaspush">⬆️ Push to Cloud</button>
-     </div>
-     <div class="status" id="gasstat"></div>
+     <div class="status ok" id="gasstat">${esc(syncLabel())}</div>
    </div>
   </details>
 
   <details class="glass setrow" style="margin-top:12px">
    <summary><b>✈️ Telegram Reminders (free)</b></summary>
    <div class="setwrap">
+     <p>With Cloud Sync on, reminders are sent by the cloud even when your phone is locked and Norie is closed.</p>
      <label>Bot token</label><input id="tgt" value="${esc(st.tgToken)}" placeholder="123456:ABC-DEF..." autocomplete="off">
      <label>Chat ID</label><input id="tgc" value="${esc(st.tgChat)}" placeholder="123456789" inputmode="numeric">
      <div class="btns"><button class="btn main small" id="tgsave">Save &amp; send test</button></div><div class="status" id="tgstat"></div>
@@ -733,7 +793,7 @@ function vSettings(){
 }
 function render(){
   bar();
-  ORc=null;
+  ORc=null;RBc=null;
   $('#app').innerHTML={today:vToday,upcoming:vUpcoming,lists:vLists,settings:vSettings}[tab]();
   $('#fab').style.display=tab==='settings'?'none':'block';
   if(typeof syncNorie==='function')syncNorie();
@@ -754,32 +814,6 @@ $('#app').addEventListener('click',async e=>{
   const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list?')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
   if(T.id==='askperm'){await Notification.requestPermission();render();return}
   if(T.id==='testn'){await sysNotify('Norie 🤖','Notifications working!','test');beep();toast({id:'x'},{title:'Test',body:'Reminders look like this.'});return}
-  if(T.id==='gaspull'){
-    const url=$('#gas_url').value.trim();
-    if($('#s_name')?.value.trim())S.settings.name=$('#s_name').value.trim();
-    S.settings.gasUrl=url;
-    localStorage.setItem(KEY,JSON.stringify(S));
-    $('#gasstat').className='status ok';$('#gasstat').textContent='Pulling from cloud...';
-    const ok=await loadFromGas(true);
-    const stEl=$('#gasstat');
-    if(stEl){
-      stEl.className='status '+(ok?'ok':'no');
-      stEl.textContent=ok?`Pulled ${S.tasks.length} tasks from cloud ✓`:'No cloud data found for this name, or check URL.';
-    }
-    return;
-  }
-  if(T.id==='gaspush'){
-    const url=$('#gas_url').value.trim();
-    if($('#s_name')?.value.trim())S.settings.name=$('#s_name').value.trim();
-    S.settings.gasUrl=url;
-    S.updatedAt=Date.now();
-    localStorage.setItem(KEY,JSON.stringify(S));
-    $('#gasstat').className='status ok';$('#gasstat').textContent='Uploading to cloud...';
-    const ok=await syncToGas();
-    $('#gasstat').className='status '+(ok?'ok':'no');
-    $('#gasstat').textContent=ok?`Uploaded ${S.tasks.length} tasks to cloud ✓`:'Upload failed — check Web App URL.';
-    return;
-  }
   if(T.id==='tgsave'){S.settings.tgToken=$('#tgt').value.trim();S.settings.tgChat=$('#tgc').value.trim();save();const ok=await sendTelegram(`🤖 Hi ${myName()}, it’s Norie! Connected.`);$('#tgstat').className='status '+(ok?'ok':'no');$('#tgstat').textContent=ok?'Sent! Check Telegram ✓':'Error connecting Telegram.';return}
   if(T.id==='exp'){download('norie-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,1),'application/json');return}
   if(T.id==='imp'){$('#impf').click();return}
@@ -796,6 +830,14 @@ $('#app').addEventListener('change',e=>{
   if(id==='s_greet'){S.settings.greet=e.target.checked;save()}
   if(id==='s_cal'){S.settings.autoCal=e.target.checked;save()}
   if(id==='av_file'){const f=e.target.files[0];if(f)setPhoto(f)}
+  /* connecting / changing the URL or name starts syncing right away: newest side wins automatically */
+  if(id==='gas_url'||id==='s_name'){
+    S.settings.gasUrl=(($('#gas_url')||{}).value||S.settings.gasUrl||'').trim();
+    if(id==='s_name'&&e.target.value.trim())S.settings.name=e.target.value.trim();
+    localStorage.setItem(KEY,JSON.stringify(S));
+    if(hasCloud()){syncState='busy';paintSync();loadFromGas().then(()=>paintSync())}
+    else paintSync();
+  }
   if(id==='impf'){const f=e.target.files[0];if(!f)return;f.text().then(x=>{try{const d=JSON.parse(x);if(!d.tasks||!d.lists)throw 0;if(confirm('Restore backup?')){S=d;save();render()}}catch(_){alert('Invalid backup file.')}})}
 });
 
@@ -943,19 +985,20 @@ function homePos(){
   return clampPos(innerWidth-NSZ-20,22);
 }
 
-var ORc=null,ORt=0;
+/* perf: row rects are measured once per ~120ms (not every frame), robot elements are cached */
+var ORc=null,ORt=0,RBc=null;
+const getRbts=()=>RBc||(RBc=[...document.querySelectorAll('.rbt')]);
 function openRows(){
-  const nw=performance.now();if(ORc&&nw-ORt<200)return ORc;
+  const nw=performance.now();if(ORc&&nw-ORt<120)return ORc;
   const out=[],H=innerHeight;
   document.querySelectorAll('#app .row:not(.done)').forEach(r=>{
     const b=r.getBoundingClientRect(),cy=b.top+b.height/2;
-    if(b.width>0&&cy>NSZ*.6&&cy<H-100)out.push({el:r,id:r.dataset.id,late:r.querySelector('.late')?1:0});
+    if(b.width>0&&cy>NSZ*.6&&cy<H-100)out.push({el:r,id:r.dataset.id,late:r.querySelector('.late')?1:0,b});
   });
   out.sort((a,b)=>b.late-a.late);
   ORc=out;ORt=nw;return out;
 }
-function rowTarget(row){
-  const b=row.getBoundingClientRect();
+function rowTarget(b){
   return clampPos(b.right-NSZ-4,b.top+b.height/2-NSZ/2);
 }
 
@@ -1030,7 +1073,7 @@ function nLogic(now){
     const item=rows.find(r=>r.id===NR.taskId);
     if(!item){NR.mode='home';NR.taskId=null;NR.nextAt=now+700}
     else{
-      const g=rowTarget(item.el);T.tx=g.x;T.ty=g.y;
+      const g=rowTarget(item.b);T.tx=g.x;T.ty=g.y;
       if(!NR.arrived&&Math.hypot(T.x-g.x,T.y-g.y)<16){NR.arrived=true;NR.arriveT=now;NR.stayUntil=now+5600;nSpeak(item.el)}
       if(NR.arrived&&now>NR.stayUntil){NR.visited++;nextTask(rows,now)}
     }
@@ -1132,7 +1175,7 @@ function nStep(el,dt,now){
   if(st.t3!==t3){st.t3=t3;st.threeD.style.transform=t3}
 }
 
-let nLast=performance.now(),nEl=null,nBub=null,nHello=null;
+let nLast=performance.now(),nStepT=0,nEl=null,nBub=null,nHello=null;
 function nFrame(now){
   const dt=Math.min(.05,Math.max(.001,(now-nLast)/1000));nLast=now;
   const el=nEl||(nEl=$('#norie')),on=el&&el.style.display!=='none';
@@ -1145,11 +1188,13 @@ function nFrame(now){
     if(!bub.hidden){if(now>NR.bubUntil)bub.hidden=true;else nPlace()}
   }
   const hello=(nHello||(nHello=$('#hello'))).classList.contains('on');
-  if(on||hello){
-    document.querySelectorAll('.rbt').forEach(r=>{
+  /* face/eyes/mouth are redrawn ~30x per second (movement itself still runs every frame) – big battery & lag saver */
+  if((on||hello)&&now-nStepT>=28){
+    const sdt=Math.min(.05,Math.max(.001,(now-nStepT)/1000));nStepT=now;
+    getRbts().forEach(r=>{
       if(r.closest('#hello')){if(!hello)return}
       else if(!on)return;
-      nStep(r,dt,now);
+      nStep(r,sdt,now);
     });
   }
   requestAnimationFrame(nFrame);
@@ -1218,6 +1263,7 @@ function initNorie(){
   el.id='norie';el.setAttribute('role','img');el.setAttribute('aria-label','Norie the robot');
   el.innerHTML=robotSVG()+'<div id="nbub" class="nb" hidden></div>';
   document.body.appendChild(el);
+  RBc=null;
   const h=homePos();Object.assign(NPOS,{x:h.x,y:h.y,tx:h.x,ty:h.y});
   NR.nextAt=performance.now()+4800;
   nDrag(el);syncNorie();
