@@ -271,11 +271,17 @@ a{color:var(--pink)}
 /* ---- Draw dashboard ---- */
 #dwrap{position:fixed;inset:0;z-index:5}
 #dwrap canvas{position:absolute;inset:0;touch-action:none}
-#dtb{position:absolute;top:calc(env(safe-area-inset-top) + 8px);left:8px;right:8px;display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:none}
-#dtb::-webkit-scrollbar{display:none}
-#dtb .chip{flex:none;box-shadow:0 2px 8px rgba(200,150,46,.15)}
-#dtb .sw2{width:30px;height:30px;border-radius:50%;border:3px solid #fff;flex:none;box-shadow:0 2px 6px rgba(0,0,0,.2);padding:0}
+#dtb{position:absolute;top:calc(env(safe-area-inset-top) + 8px);left:8px;right:8px;display:block;overflow:visible;padding:2px;pointer-events:none}
+#dtb .drawbar{display:flex;align-items:center;gap:6px;width:max-content;max-width:100%;overflow-x:auto;padding:4px;border:1px solid rgba(255,255,255,.85);border-radius:17px;background:rgba(255,250,243,.94);box-shadow:0 5px 18px rgba(80,40,50,.13);pointer-events:auto;scrollbar-width:none;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#dtb .drawbar::-webkit-scrollbar{display:none}
+#dtb .chip{flex:none;box-shadow:0 2px 8px rgba(200,150,46,.12);padding:8px 11px;font-size:12.5px;border-radius:12px;min-height:34px}
+#dtb select[data-draw-tool],#dtb select[data-draw-col]{width:auto;max-width:135px;min-width:100px;flex:none;padding:8px 10px;font-size:13px;border-radius:12px;border:1px solid rgba(200,150,46,.2);background:#fffaf3;box-shadow:none;pointer-events:auto}
+#dtb .sw2{width:23px;height:23px;border-radius:50%;border:2px solid #fff;flex:none;box-shadow:0 2px 6px rgba(0,0,0,.15);padding:0;pointer-events:auto}
 #dtb .sw2.on{outline:2px solid var(--pink)}
+#dtb .draw-more{position:absolute;top:48px;left:0;width:min(300px,calc(100vw - 20px));display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:11px;border:1px solid rgba(255,255,255,.9);border-radius:18px;background:rgba(255,250,243,.97);box-shadow:0 12px 30px rgba(80,40,50,.2);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);pointer-events:auto}
+#dtb .draw-more[hidden]{display:none!important}
+#dtb .draw-room-status{grid-column:1/-1;font-size:11.5px;line-height:1.35;color:var(--muted);padding:5px 4px 1px;overflow-wrap:anywhere}
+@media(max-width:430px){#dtb{left:5px;right:5px}#dtb .drawbar{gap:4px;padding:4px}#dtb .chip{padding:8px 9px;font-size:12px}#dtb select[data-draw-tool]{min-width:92px;max-width:108px}#dtb select[data-draw-col]{min-width:82px;max-width:96px}#dtb .sw2{width:20px;height:20px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -350,13 +356,18 @@ function mergeStates(a,b){
   settings.avatar=Object.assign({},defaultState.settings.avatar,(w.settings||{}).avatar||{});
   settings.gasUrl=(a.settings||{}).gasUrl||settings.gasUrl;
   settings.name=(a.settings||{}).name||settings.name;
-  const draw=(a.draw&&b.draw&&a.draw.id===b.draw.id)?mergeDraw(a.draw,b.draw):((aNew?a:b).draw||(aNew?b:a).draw);
+  const draw=(aNew?a:b).draw||(aNew?b:a).draw;
   const out={updatedAt:Math.max(a.updatedAt||0,b.updatedAt||0),lists,tasks,settings,deleted:del,dl};
   if(draw)out.draw=draw;
-out.projects=mergeProj(a.projects,b.projects,dl);
+  const projectMap=new Map();
+  for(const p of [...(a.drawProjects||[]),...(b.drawProjects||[])]) {
+    const old=projectMap.get(p.id);
+    if(!old||(p.updatedAt||0)>(old.updatedAt||0))projectMap.set(p.id,p);
+  }
+  out.drawProjects=[...projectMap.values()];
   return out;
 }
-const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{},x.draw||0,x.projects||0]);
+const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{},x.draw||0,x.drawProjects||[]]);
 
 let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle',calMsg=(()=>{try{return localStorage.getItem('petal.cal')}catch(_){return null}})();
 const setCal=v=>{calMsg=v;try{v==null?localStorage.removeItem('petal.cal'):localStorage.setItem('petal.cal',v)}catch(_){}};
@@ -437,7 +448,7 @@ function applyCloud(cloud){
   if(cloudDiffers){S.updatedAt=Date.now();setDirty(true)}
   else{S.updatedAt=Math.max(S.updatedAt||0,ct);setDirty(false)}
   localStorage.setItem(KEY,JSON.stringify(S));
-  snapAll();resetDSN();
+  snapAll();
   if(cloudDiffers)schedulePush();
   if(localDiffers&&!isTyping()&&!sheetOpen()&&tab!=='draw')render();
   return localDiffers;
@@ -1493,7 +1504,7 @@ function nAskMotion(){
 }
 function syncNorie(){
   const el=$('#norie');if(!el)return;
-  const on=S.settings.avatar.type==='robot';
+  const on=tab!=='draw'&&S.settings.avatar.type==='robot';
   el.style.display=on?'block':'none';
   if(!on)$('#nbub').hidden=true;
 }
@@ -1512,109 +1523,120 @@ function initNorie(){
   requestAnimationFrame(nFrame);
 }
 
-/* ---------- DRAW sync helpers: stamps, merge, projects, live rooms ---------- */
-function dwalk(l,f){for(const it of l){f(it);if(it.t==='g')dwalk(it.i,f)}}
-function dh(it){return JSON.stringify(it,(k,v)=>k==='u'?undefined:(k==='src'&&typeof v==='string')?v.length+v.slice(-30):v)}
-var DSN=new Map(),RV=0,RSeq=0,RDirty=false,RBusy=false;
-function stampDraw(){
-  const d=S.draw;if(!d||!d.items)return;
-  d.del=d.del||{};d.links=d.links||[];
-  const now=Date.now(),seen=new Map();
-  dwalk(d.items,it=>{if(!it.id)it.id=uid();seen.set(it.id,it)});
-  d.links.forEach(l=>{if(!l.id)l.id=uid();seen.set(l.id,l)});
-  for(const [id,it] of seen){const h=dh(it);if(DSN.get(id)!==h){it.u=now;DSN.set(id,h);delete d.del[id]}}
-  for(const id of [...DSN.keys()])if(!seen.has(id)){d.del[id]=now;DSN.delete(id)}
-  for(const id in d.del)if(now-d.del[id]>45*864e5)delete d.del[id];
-  d.u=now;
-}
-function resetDSN(){
-  DSN=new Map();const d=S.draw;if(!d||!d.items)return;
-  dwalk(d.items,it=>{if(!it.id)it.id=uid();DSN.set(it.id,dh(it))});
-  (d.links||[]).forEach(l=>{if(!l.id)l.id=uid();DSN.set(l.id,dh(l))});
-}
-function mergeDraw(a,b){
-  const del={};for(const o of [a.del||{},b.del||{}])for(const id in o)del[id]=Math.max(del[id]||0,o[id]);
-  const dead=(id,it)=>del[id]&&del[id]>=(it.u||0);
-  const ml=(x,y)=>{
-    const m=new Map();
-    for(const it of x||[])m.set(it.id,it);
-    for(const it of y||[]){
-      const o=m.get(it.id);
-      if(!o)m.set(it.id,it);
-      else if(o.t==='g'&&it.t==='g'){const w=(it.u||0)>(o.u||0)?it:o;m.set(it.id,{...w,i:ml(o.i,it.i)})}
-      else if((it.u||0)>(o.u||0))m.set(it.id,it);
-    }
-    return [...m.entries()].filter(([id,it])=>!dead(id,it)).map(e=>e[1]);
-  };
-  const items=ml(a.items,b.items);
-  /* an item can be top-level on one side and inside a new group on the other: keep the deepest copy only */
-  const depth=new Map();
-  (function w(l,dp){for(const it of l){if((depth.get(it.id)??-1)<dp)depth.set(it.id,dp);if(it.t==='g')w(it.i,dp+1)}})(items,0);
-  const done=new Set();
-  (function p(l,dp){for(let i=0;i<l.length;i++){const it=l[i];if(depth.get(it.id)!==dp||done.has(it.id)){l.splice(i--,1);continue}done.add(it.id);if(it.t==='g')p(it.i,dp+1)}})(items,0);
-  const fl=new Map();
-  for(const l of [...(a.links||[]),...(b.links||[])]){const o=fl.get(l.id);if(!o||(l.u||0)>(o.u||0))fl.set(l.id,l)}
-  const links=[...fl.values()].filter(l=>!dead(l.id,l));
-  return {...a,items,links,del,u:Math.max(a.u||0,b.u||0)};
-}
-function mergeProj(a,b,dl){
-  const m=new Map();
-  for(const p of [...(a||[]),...(b||[])]){const o=m.get(p.id);if(!o||(p.u||0)>(o.u||0))m.set(p.id,p)}
-  return [...m.values()].filter(p=>!(dl||{})[p.id]);
-}
-const rUrl=()=>{let u='';try{u=localStorage.getItem('petal.roomUrl')||''}catch(_){}return (u||S.settings.gasUrl||'').trim()};
-async function rCall(body){
-  const url=rUrl();if(!url||!navigator.onLine)throw new Error('off');
-  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),15000);
-  try{
-    const r=await fetch(url,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'room',...body}),signal:ctl.signal});
-    return JSON.parse(await r.text());
-  }finally{clearTimeout(to)}
-}
-async function roomSync(){
-  const d=S.draw,code=d&&d.room;
-  if(!code||RBusy||(tab!=='draw'&&!RDirty))return;
-  if(window.dBusy&&window.dBusy())return;
-  RBusy=true;
-  try{
-    const put=RDirty,seq=RSeq;
-    const r=put?await rCall({op:'put',room:code,base:RV,draw:{id:d.id,name:d.name,items:d.items,links:d.links||[],del:d.del||{},u:d.u||0}})
-               :await rCall({op:'get',room:code,since:RV});
-    if(!r||r.status==='error')throw 0;
-    if(S.draw!==d||(window.dBusy&&window.dBusy())){/* switched drawing or mid-stroke: ignore, retry next tick */}
-    else if(put&&r.status==='ok'){RV=r.ver;if(RSeq===seq)RDirty=false}
-    else if(r.status!=='same'){
-      if(r.draw){Object.assign(d,mergeDraw(d,r.draw));resetDSN();window.dRedraw&&window.dRedraw();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(_){}}
-      RV=r.ver;if(put)RDirty=true;
-    }
-  }catch(_){}
-  RBusy=false;
-}
-setInterval(roomSync,3000);
-function joinFromHash(){
-  const m=location.hash.match(/room=([\w-]+)/);if(!m)return false;
-  const g=(location.hash.match(/[&#]g=([^&]+)/)||[])[1],v=/[&#]v=1/.test(location.hash);
-  history.replaceState(null,'',location.pathname+location.search);
-  tab='draw';curList=null;render();window.joinRoom(m[1],v,g?decodeURIComponent(g):'');return true;
-}
-
-/* ---------- DRAW dashboard ---------- */
-const _gsave=save;
+/* ---------- DRAW dashboard: sketch systems, group them, zoom out -> names -> report ---------- */
 (function(){
-let cam={x:0,y:0,k:1},tool='pen',col='#3a2a30',cv,cx,live=null,P=new Map(),pin=null,drag=null,W=0,H=0,dpr=1,dirty=true,looping=false,hist=[],inited=false,sel=null;
+let cam={x:0,y:0,k:1},tool='pen',col='#3a2a30',cv,cx,live=null,P=new Map(),pin=null,drag=null,W=0,H=0,dpr=1,dirty=true,looping=false,hist=[],inited=false;
+let roomCode='',roomVer=0,roomTimer=null,roomPushTimer=null,roomBusy=false,roomPending=false,readOnly=false,moreOpen=false,roomStatus='Not connected',roomErrorShown=false;
+const imageCache=new Map();
+function cloneItem(it){const o={...it};if(it.p)o.p=it.p.slice();if(it.i)o.i=it.i.map(cloneItem);return o}
+function ensureItemIds(items){for(const it of items){if(!it.id)it.id='di_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);if(it.t==='g')ensureItemIds(it.i||[])}}
+function drawState(){ensureItemIds(root());return {items:root().map(cloneItem),links:JSON.parse(JSON.stringify(links()))}}
+function mergeItemLists(localItems,remoteItems){
+ const local=Array.isArray(localItems)?localItems:[],remote=Array.isArray(remoteItems)?remoteItems:[];
+ const byId=new Map(local.map(it=>[it.id,it]));const out=local.map(cloneItem);
+ const outMap=new Map(out.map(it=>[it.id,it]));
+ for(const ri of remote){
+  if(!ri)continue;const li=byId.get(ri.id);
+  if(!li){out.push(cloneItem(ri));continue}
+  const oi=outMap.get(ri.id);
+  if(li.t==='g'&&ri.t==='g'&&oi){oi.i=mergeItemLists(li.i,ri.i);}
+ }
+ return out;
+}
+function mergeDraws(localDraw,remoteDraw){
+ const a=localDraw||{items:[],links:[]},b=remoteDraw||{items:[],links:[]};
+ const mergedLinks=[],seen=new Set();
+ for(const l of [...(a.links||[]),...(b.links||[])]){const key=[l.a,l.b].sort().join('|');if(!seen.has(key)){seen.add(key);mergedLinks.push({...l})}}
+ return {items:mergeItemLists(a.items,b.items),links:mergedLinks};
+}
+function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('drawRoomStatus');if(el)el.textContent=msg}
+function scheduleRoomPush(delay=450){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
+function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
+async function roomCall(body){
+ const url=(S.settings.gasUrl||'').trim();if(!url)throw new Error('Add the Apps Script Web App URL in Settings first');if(!navigator.onLine)throw new Error('You are offline');
+ const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),18000);
+ try{
+  const res=await fetch(url,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({userId:getUserKey()},body)),signal:ctl.signal});
+  const tx=await res.text();let data;try{data=JSON.parse(tx)}catch(_){throw new Error('Apps Script did not return JSON. Redeploy the latest Code.js as a Web App and check the URL.')}
+  if(!res.ok)throw new Error('Server HTTP '+res.status);if(!data||!data.status)throw new Error(data&&data.message||'Invalid room response');return data;
+ }finally{clearTimeout(to)}
+}
+async function pushRoom(){
+ if(!roomCode||readOnly||!roomPending||roomBusy)return;
+ roomBusy=true;roomPending=false;updateRoomStatus('Sending changes…');
+ try{
+  const r=await roomCall({action:'room',op:'put',room:roomCode,base:roomVer,draw:drawState()});
+  if(r.status==='ok'){
+   roomVer=Number(r.ver)||0;roomErrorShown=false;updateRoomStatus('Connected · version '+roomVer);
+  }else if(r.status==='stale'&&r.draw){
+   roomVer=Number(r.ver)||0;S.draw=mergeDraws(drawState(),r.draw);hist=[];dirty=true;save();roomPending=true;updateRoomStatus('Merging another user’s changes…');
+  }else throw new Error(r.message||('Unexpected room status: '+r.status));
+ }catch(e){roomPending=true;updateRoomStatus('Room error · retrying');if(!roomErrorShown){flash('Live room save failed: '+(e&&e.message?e.message:'check Apps Script deployment'));roomErrorShown=true}}
+ finally{roomBusy=false;if(roomPending&&roomCode)setTimeout(()=>scheduleRoomPush(0),navigator.onLine?650:2500)}
+}
+async function pullRoom(){
+ if(!roomCode||roomBusy||!hasCloud()||!navigator.onLine)return;
+ try{
+  const r=await roomCall({action:'room',op:'get',room:roomCode,since:roomVer});
+  if(r.status==='same'){if(!roomPending)updateRoomStatus('Connected · version '+roomVer);return}
+  if(r.status!=='ok')throw new Error(r.message||('Unexpected room status: '+r.status));
+  const ver=Number(r.ver)||0;if(ver===roomVer)return;
+  if(drag||live){updateRoomStatus('Other user changed room · syncing after your stroke');return}
+  if(roomPending){S.draw=mergeDraws(drawState(),r.draw||{items:[],links:[]});roomVer=ver;hist=[];dirty=true;save();roomPending=true;updateRoomStatus('Merging another user’s changes…');scheduleRoomPush(150)}
+  else{roomVer=ver;if(r.draw)S.draw={items:r.draw.items||[],links:r.draw.links||[]};else S.draw={items:[],links:[]};ensureItemIds(root());hist=[];dirty=true;save();updateRoomStatus('Connected · version '+roomVer)}
+ }catch(e){updateRoomStatus('Room error · check connection');if(!roomErrorShown){flash('Live room update failed: '+(e&&e.message?e.message:'check Apps Script deployment'));roomErrorShown=true}}
+}
+function roomLoop(){clearInterval(roomTimer);if(roomCode)roomTimer=setInterval(pullRoom,1200)}
+function saveProject(){
+ if(readOnly){flash('Turn off See only to save changes');return}
+ const name=prompt('Project folder name','My drawing');if(!name||!name.trim())return;
+ S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
+ S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:name.trim().slice(0,80),updatedAt:Date.now(),draw:drawState()});
+ drawSave();flash('Saved in project folder');
+}
+function newDrawing(){
+ if(readOnly){flash('Turn off See only to edit');return}
+ if(!confirm('Start a new drawing?'))return;
+ if(root().length||links().length){
+  if(confirm('Save the current drawing in a project folder before starting the new one?')){
+   const name=prompt('Project folder name for the current drawing','Drawing '+new Date().toLocaleDateString());
+   if(name&&name.trim()){S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:name.trim().slice(0,80),updatedAt:Date.now(),draw:drawState()})}
+  }
+ }
+ S.draw={items:[],links:[]};hist=[];cam={x:W/2,y:H/2,k:1};dirty=true;drawSave();
+}
+function openProject(){
+ if(readOnly){flash('Turn off See only to open projects');return}
+ const ps=Array.isArray(S.drawProjects)?S.drawProjects:[];if(!ps.length){flash('No saved projects yet');return}
+ const choice=prompt('Enter project number to open:\n'+ps.map((p,i)=>(i+1)+'. '+p.name).join('\n'));
+ const n=Number(choice)-1;if(!Number.isInteger(n)||!ps[n])return;
+ if(!confirm('Open “'+ps[n].name+'”? The current drawing will be replaced.'))return;
+ S.draw={items:(ps[n].draw.items||[]).map(cloneItem),links:(ps[n].draw.links||[]).slice()};ensureItemIds(root());hist=[];fit();drawSave();
+}
+async function joinRoom(){
+ if(!hasCloud()){flash('Add your Apps Script Web App URL in Settings first');return}
+ const code=prompt('Enter a shared room code. Use the same code on every device (letters/numbers/dash/underscore).',roomCode||'team-drawing');
+ if(code===null)return;const clean=code.trim().replace(/[^\w-]/g,'').slice(0,24);if(!clean){flash('Room code is required');return}
+ updateRoomStatus('Connecting to room…');
+ try{
+  const r=await roomCall({action:'room',op:'get',room:clean});
+  if(r.status==='error')throw new Error(r.message||'Room server returned an error');
+  if(r.draw){if(!confirm('A drawing already exists in room '+clean+'. Load and use that shared drawing?')){updateRoomStatus(roomCode?'Connected · '+roomCode:'Not connected');return}S.draw={items:r.draw.items||[],links:r.draw.links||[]};ensureItemIds(root());hist=[];dirty=true;save()}
+  roomCode=clean;roomVer=Number(r.ver)||0;roomPending=!r.draw;roomErrorShown=false;roomLoop();toolbar();
+  if(roomPending)scheduleRoomPush(50);else updateRoomStatus('Connected · version '+roomVer);
+  flash('Live room connected: '+roomCode);
+ }catch(e){updateRoomStatus('Not connected');flash('Could not connect to live room: '+(e&&e.message?e.message:'check the Apps Script URL and deployment'))}
+}
 const root=()=>(S.draw=S.draw&&S.draw.items?S.draw:{items:[],links:[]}).items;
 const links=()=>{root();return S.draw.links||(S.draw.links=[])};
-const projs=()=>S.projects||(S.projects=[]);
-const save=()=>{stampDraw();_gsave();if(S.draw&&S.draw.room){RSeq++;RDirty=true;setTimeout(roomSync,600)}};
-function snap(){root();hist.push(JSON.stringify({items:S.draw.items,links:S.draw.links||[]}));if(hist.length>30)hist.shift()}
+function snap(){root();hist.push(JSON.stringify({items:S.draw.items,links:S.draw.links||[]}));if(hist.length>60)hist.shift()}
 function snapOnce(){if(drag&&!drag.sn){drag.sn=1;snap()}}
-function undo(){const h=hist.pop();if(!h){flash('Nothing to undo');return}const o=JSON.parse(h);S.draw.items=o.items;S.draw.links=o.links||[];sel=null;save();dirty=true}
+function undo(){const h=hist.pop();if(!h){flash('Nothing to undo');return}const o=JSON.parse(h);S.draw={items:o.items,links:o.links||[]};drawSave();dirty=true}
 const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const xyInside=(x,y,b)=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h;
 const s2w=(x,y)=>[(x-cam.x)/cam.k,(y-cam.y)/cam.k];
 const COLS=['#3a2a30','#f4687f','#c8962e','#2f9e6a'];
-const TOOLS=[['pen','Pen'],['text','Text'],['erase','Erase'],['group','Group'],['sel','Select'],['link','Link']];
-const IMG=new Map();
-function getImg(it){const k=it.id+'|'+it.src.length;let m=IMG.get(k);if(!m){m=new Image();m.onload=()=>{dirty=true};m.src=it.src;IMG.set(k,m)}return m}
+const TOOLS=[['pen','Pen'],['text','Text'],['sel','Move / resize'],['group','Group box'],['image','Add image'],['edit','Edit item'],['erase','Erase'],['link','Link boxes']];
 
 function bb(it){
   if(it.t==='s'){let a=1e15,b=1e15,c=-1e15,d=-1e15;for(let i=0;i<it.p.length;i+=2){a=Math.min(a,it.p[i]);c=Math.max(c,it.p[i]);b=Math.min(b,it.p[i+1]);d=Math.max(d,it.p[i+1])}return{x:a,y:b,w:c-a,h:d-b}}
@@ -1625,16 +1647,8 @@ function move(it,dx,dy){
   if(it.t==='s')for(let i=0;i<it.p.length;i+=2){it.p[i]+=dx;it.p[i+1]+=dy}
   else{it.x+=dx;it.y+=dy;if(it.t==='g')it.i.forEach(c=>move(c,dx,dy))}
 }
-function scaleItem(it,ax,ay,sx,sy){
-  const m=(sx+sy)/2;
-  if(it.t==='s'){for(let i=0;i<it.p.length;i+=2){it.p[i]=ax+(it.p[i]-ax)*sx;it.p[i+1]=ay+(it.p[i+1]-ay)*sy}it.w*=m}
-  else if(it.t==='t'){it.x=ax+(it.x-ax)*sx;it.y=ay+(it.y-ay)*sy;it.s*=m}
-  else{it.x=ax+(it.x-ax)*sx;it.y=ay+(it.y-ay)*sy;it.w*=sx;it.h*=sy;if(it.t==='g')it.i.forEach(c=>scaleItem(c,ax,ay,sx,sy))}
-}
 const fade=(g,k)=>cl((Math.min(g.w*k,g.h*k*1.8)-150)/100,0,1);
 const inside=(b,x,y)=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h;
-const corners=b=>[[b.x,b.y],[b.x+b.w,b.y],[b.x,b.y+b.h],[b.x+b.w,b.y+b.h]];
-function listOf2(it){let r=null;(function f(L){for(const x of L){if(r)return;if(x===it){r=L;return}if(x.t==='g')f(x.i)}})(root());return r}
 
 function paint(c,items,k,al){
   for(const it of items){
@@ -1647,11 +1661,13 @@ function paint(c,items,k,al){
     }else if(it.t==='t'){
       c.globalAlpha=al;c.fillStyle=it.c;const ls=it.v.split('\n');
       c.font=ls.length>1?`500 ${it.s}px ui-monospace,Menlo,Consolas,monospace`:`600 ${it.s}px -apple-system,Helvetica,sans-serif`;
-      c.textAlign='left';ls.forEach((t,n)=>c.fillText(t,it.x,it.y+n*it.s*1.3));
-    }else if(it.t==='i'){
-      const im=getImg(it);c.globalAlpha=al;
+      c.textAlign='left';ls.forEach((t,n)=>c.fillText(t,it.x,it.y+n*it.s*1.3)); 
+    }else if(it.t==='im'){
+      c.globalAlpha=al;
+      let im=imageCache.get(it.src);
+      if(!im){im=new Image();im.onload=()=>{dirty=true};im.src=it.src;imageCache.set(it.src,im)}
       if(im.complete&&im.naturalWidth)c.drawImage(im,it.x,it.y,it.w,it.h);
-      else{c.fillStyle='rgba(200,150,46,.15)';c.fillRect(it.x,it.y,it.w,it.h)}
+      else{c.fillStyle='rgba(255,255,255,.8)';c.fillRect(it.x,it.y,it.w,it.h);c.strokeStyle='#c8962e';c.strokeRect(it.x,it.y,it.w,it.h)}
     }else{
       const f=fade(it,k),r=Math.min(it.w,it.h)*.08;
       if(f<1){
@@ -1666,7 +1682,12 @@ function paint(c,items,k,al){
         c.beginPath();c.roundRect(it.x,it.y,it.w,it.h,r);c.stroke();c.setLineDash([]);
         const fs=Math.min(18/k,it.h*.14);c.fillStyle='#c8962e';c.font=`800 ${fs}px -apple-system,Helvetica,sans-serif`;c.textAlign='left';
         c.fillText(it.l,it.x+fs*.5,it.y+fs*1.2);
+        c.save();
+        c.beginPath();c.rect(it.x,it.y+22/k,it.w,Math.max(0,it.h-22/k));c.clip();
         paint(c,it.i,k,f*al);
+        c.restore();
+        /* A visible resize grip appears when the container is zoomed in. */
+        if(f>.5){const hs=11/k;c.globalAlpha=al;c.fillStyle='#c8962e';c.fillRect(it.x+it.w-hs,it.y+it.h-hs,hs,hs);c.strokeStyle='#fff8ee';c.lineWidth=1/k;c.strokeRect(it.x+it.w-hs,it.y+it.h-hs,hs,hs)}
       }
     }
   }
@@ -1704,14 +1725,6 @@ function frame(){
       else if(live.t==='l'){cx.strokeStyle='#c8962e';cx.lineWidth=2.5/cam.k;cx.beginPath();cx.moveTo(live.x1,live.y1);cx.lineTo(live.x2,live.y2);cx.stroke()}
       else if(live.t==='r'){cx.strokeStyle='#f4687f';cx.lineWidth=2/cam.k;cx.setLineDash([6/cam.k,5/cam.k]);cx.strokeRect(live.x,live.y,live.w,live.h);cx.setLineDash([])}
     }
-    if(sel&&tool==='sel'){
-      if(!listOf2(sel))sel=null;
-      else{
-        const b=bb(sel),r=9/cam.k;
-        cx.strokeStyle='#f4687f';cx.lineWidth=1.5/cam.k;cx.setLineDash([6/cam.k,4/cam.k]);cx.strokeRect(b.x,b.y,b.w,b.h);cx.setLineDash([]);
-        cx.fillStyle='#fff';for(const[hx,hy] of corners(b)){cx.beginPath();cx.arc(hx,hy,r,0,6.2832);cx.fill();cx.stroke()}
-      }
-    }
     cx.restore();
   }
   requestAnimationFrame(frame);
@@ -1721,22 +1734,21 @@ function deepest(x,y){
   while(go){go=false;for(let i=list.length-1;i>=0;i--){const g=list[i];if(g.t==='g'&&fade(g,cam.k)>.5&&inside(g,x,y)){list=g.i;owner=g;go=true;break}}}
   return{list,owner};
 }
-/* what is under this point: item in the deepest open container; or the container itself (title strip = movable) */
-function pick(x,y){
-  const d=deepest(x,y),L=d.list;
-  for(let i=L.length-1;i>=0;i--){
-    const it=L[i];
-    if(it.t==='s'){const r=14/cam.k;for(let j=0;j<it.p.length;j+=2)if(Math.hypot(it.p[j]-x,it.p[j+1]-y)<r)return{it,list:L}}
-    else if(inside(bb(it),x,y))return{it,list:L};
-  }
-  const o=d.owner;
-  if(o){const hd=Math.min(18/cam.k,o.h*.14)*1.8;return{it:o,list:y<o.y+hd?listOf2(o):null}}
-  return null;
+function hitGroup(x,y){
+  const d=deepest(x,y);
+  for(let i=d.list.length-1;i>=0;i--){const g=d.list[i];if(g.t==='g'&&inside(g,x,y))return{g,list:d.list}}
+  return d.owner?{g:d.owner,list:null}:null;
 }
-function hitHandle(x,y){
-  if(!sel)return null;const cs=corners(bb(sel)),r=26/cam.k;
-  for(let i=0;i<4;i++)if(Math.hypot(cs[i][0]-x,cs[i][1]-y)<r)return{ax:cs[3-i][0],ay:cs[3-i][1]};
-  return null;
+function hitItem(x,y,items){
+ for(let i=(items||[]).length-1;i>=0;i--){
+  const it=items[i];if(!it||it.t==='g')continue;
+  if(it.t==='s'){
+   const r=10/cam.k,p=it.p||[];
+   for(let j=0;j<p.length-2;j+=2){const dx=p[j+2]-p[j],dy=p[j+3]-p[j+1],l2=dx*dx+dy*dy||1,t=cl(((x-p[j])*dx+(y-p[j+1])*dy)/l2,0,1);if(Math.hypot(x-(p[j]+t*dx),y-(p[j+1]+t*dy))<=r)return it}
+   if(p.length>=2&&Math.hypot(x-p[0],y-p[1])<=r)return it;
+  }else if(xyInside(x,y,bb(it)))return it;
+ }
+ return null;
 }
 function zoomTo(g){
   const k=Math.max(Math.min(W/(g.w*1.15),(H-170)/(g.h*1.15)),260/Math.min(g.w,g.h*1.8));
@@ -1749,6 +1761,13 @@ function fit(){
   const w=Math.max(c-a,40),h=Math.max(d-b,40),k=Math.min(W/(w*1.2),(H-190)/(h*1.2));
   cam.k=k;cam.x=W/2-(a+w/2)*k;cam.y=(H-40)/2-(b+h/2)*k;dirty=true;
 }
+function tidy(){
+  const gs=root().filter(i=>i.t==='g');if(gs.length<2)return;
+  const cols=Math.ceil(Math.sqrt(gs.length)),gap=60,cw=Math.max(...gs.map(g=>g.w)),ch=Math.max(...gs.map(g=>g.h));
+  const x0=Math.min(...gs.map(g=>g.x)),y0=Math.min(...gs.map(g=>g.y));
+  gs.forEach((g,n)=>move(g,x0+(n%cols)*(cw+gap)-g.x,y0+Math.floor(n/cols)*(ch+gap)-g.y));
+  drawSave();fit();
+}
 function erase(x,y){
   const r=14/cam.k,ls=links();
   for(let i=ls.length-1;i>=0;i--){const sg=linkSeg(ls[i]);if(sg&&distSeg(x,y,sg)<r){snapOnce();ls.splice(i,1);dirty=true;return true}}
@@ -1756,7 +1775,7 @@ function erase(x,y){
   for(let i=d.length-1;i>=0;i--){
     const it=d[i];
     if(it.t==='s'){for(let j=0;j<it.p.length;j+=2)if(Math.hypot(it.p[j]-x,it.p[j+1]-y)<r){snapOnce();d.splice(i,1);dirty=true;return true}}
-    else if((it.t==='t'||it.t==='i')&&inside(bb(it),x,y)){snapOnce();d.splice(i,1);dirty=true;return true}
+    else if(it.t==='t'&&inside(bb(it),x,y)){snapOnce();d.splice(i,1);dirty=true;return true}
   }
 }
 function ask(title,val,cb,multi){
@@ -1772,31 +1791,45 @@ function ask(title,val,cb,multi){
   if(!multi)i.onkeydown=e=>{if(e.key==='Enter')ok()};
   setTimeout(()=>i.focus(),60);
 }
+function optimizeImage(file){
+ return new Promise((resolve,reject)=>{
+  if(!file){reject(new Error('No image selected'));return}
+  if(file.size>12*1024*1024){reject(new Error('Choose an image smaller than 12 MB'));return}
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('This image could not be opened'))};
+  im.onload=()=>{
+   URL.revokeObjectURL(url);let side=Math.min(1280,Math.max(im.naturalWidth,im.naturalHeight)),quality=.78;
+   const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+   const encode=()=>{
+    const scale=Math.min(1,side/Math.max(im.naturalWidth,im.naturalHeight));canvas.width=Math.max(1,Math.round(im.naturalWidth*scale));canvas.height=Math.max(1,Math.round(im.naturalHeight*scale));
+    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(im,0,0,canvas.width,canvas.height);
+    let src;try{src=canvas.toDataURL('image/webp',quality)}catch(e){reject(new Error('Could not compress this image'));return}
+    if(src.length<=240000){resolve({src,width:canvas.width,height:canvas.height});return}
+    if(quality>.48)quality-=.08;else{side=Math.floor(side*.82);quality=.72}
+    if(side<420){reject(new Error('This image is too detailed to store safely on a phone'));return}
+    setTimeout(encode,0);
+   };
+   encode();
+  };
+  im.src=url;
+ });
+}
+function pickDrawingImage(onReady){
+ let inp=document.getElementById('drawImagePick');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='drawImagePick';inp.hidden=true;document.body.append(inp)}
+ inp.onchange=async()=>{const file=inp.files&&inp.files[0];if(!file){inp.value='';return}try{const image=await optimizeImage(file);onReady(image)}catch(e){flash(e&&e.message?e.message:'Could not load image')}finally{inp.value=''}};
+ inp.click();
+}
 function makeGroup(r){
   const cxw=r.x+r.w/2,cyw=r.y+r.h/2,list=deepest(cxw,cyw).list;
   const mine=list.filter(it=>{const b=bb(it);if(inside(r,b.x+b.w/2,b.y+b.h/2))return true;const ox=Math.min(r.x+r.w,b.x+b.w)-Math.max(r.x,b.x),oy=Math.min(r.y+r.h,b.y+b.h)-Math.max(r.y,b.y);return ox>0&&oy>0&&ox*oy>.5*Math.max(b.w*b.h,1e-9)});
+  if(!mine.length){flash('Draw something inside the box first');return}
   ask('Name this system','',name=>{
     if(!name||!name.trim())return;snap();
     let a=r.x,b=r.y,c=r.x+r.w,d=r.y+r.h;
     mine.forEach(it=>{const q=bb(it);a=Math.min(a,q.x-8);b=Math.min(b,q.y-8);c=Math.max(c,q.x+q.w+8);d=Math.max(d,q.y+q.h+8)});
-    const g={t:'g',id:uid(),l:name.trim().slice(0,40),x:a,y:b-22/cam.k,w:c-a,h:d-b+22/cam.k,i:mine};
-    mine.forEach(it=>{const k=list.indexOf(it);if(k>=0)list.splice(k,1)});list.push(g);sel=g;save();dirty=true;toolbar();
+    const g={t:'g',id:Math.random().toString(36).slice(2,8),l:name.trim().slice(0,40),x:a,y:b-22/cam.k,w:c-a,h:d-b+22/cam.k,i:mine};
+    mine.forEach(it=>{const k=list.indexOf(it);if(k>=0)list.splice(k,1)});list.push(g);drawSave();dirty=true;
   });
-}
-/* an empty box is allowed now: draw the rectangle, name it, then fill it with images/text/drawings */
-function addImg(f){
-  const im=new Image(),u=URL.createObjectURL(f);
-  im.onload=()=>{
-    const m=Math.min(1,560/Math.max(im.width,im.height)),c=document.createElement('canvas');
-    c.width=Math.round(im.width*m);c.height=Math.round(im.height*m);
-    c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
-    const src=c.toDataURL('image/jpeg',.6),[x,y]=s2w(W/2,H/2),list=deepest(x,y).list;
-    const w=W*.45/cam.k,h=w*c.height/c.width;
-    snap();const it={t:'i',id:uid(),x:x-w/2,y:y-h/2,w,h,src};
-    list.push(it);sel=it;tool='sel';save();dirty=true;toolbar();
-  };
-  im.onerror=()=>flash('Could not read that image');
-  im.src=u;
 }
 function thumb(g){
   const c=document.createElement('canvas'),w=150,h=100;c.width=w*2;c.height=h*2;c.style.cssText=`width:${w}px;height:${h}px;border-radius:12px;background:#fff8ee;flex:none`;
@@ -1821,112 +1854,72 @@ function report(){
   gs.forEach(g=>box.append(repNode(g,0)));
   document.body.append(o);o.querySelector('#drx').onclick=()=>o.remove();
 }
-
-/* ----- projects + live rooms ----- */
-function stash(){
-  const d=S.draw;if(!d||!d.items||!d.items.length)return;
-  if(!d.id)d.id=uid();
-  stampDraw();
-  const p={id:d.id,name:d.name||'Untitled',u:Date.now(),items:JSON.parse(JSON.stringify(d.items)),links:JSON.parse(JSON.stringify(d.links||[]))};
-  const L=projs(),i=L.findIndex(x=>x.id===p.id);if(i>=0)L[i]=p;else L.push(p);
-}
-function openDraw(dd){S.draw=dd;sel=null;hist=[];resetDSN();RV=0;RDirty=false;save();fit();dirty=true;toolbar()}
-window.joinRoom=(code,view,url)=>{
-  if(url)try{localStorage.setItem('petal.roomUrl',url)}catch(_){}
-  if(!rUrl()){alert('No Web App URL. Ask for a fresh link, or set up Cloud Sync first.');return}
-  if(!(S.draw&&S.draw.room===code)){
-    stash();S.draw={id:'room-'+code,name:'Live '+code,items:[],links:[],del:{},room:code};
-    resetDSN();sel=null;hist=[];RV=0;RDirty=false;cam={x:W/2,y:H/2,k:1};dirty=true;
-    try{localStorage.setItem(KEY,JSON.stringify(S))}catch(_){}
-  }
-  tool=view?'view':'pen';toolbar();setTimeout(roomSync,200);
-};
-window.dBusy=()=>!!(drag||pin||live);
-window.dRedraw=()=>{dirty=true};
-function linkFor(view){return appURL()+'#room='+S.draw.room+'&g='+encodeURIComponent(rUrl())+(view?'&v=1':'')}
-function copy(t){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>flash('Link copied'),()=>prompt('Copy this link',t))}
-function files(){
-  let o=document.getElementById('dfil');if(o)o.remove();
-  o=document.createElement('div');o.id='dfil';
-  o.style.cssText='position:fixed;inset:0;z-index:40;overflow:auto;background:rgba(255,248,238,.97);padding:calc(env(safe-area-inset-top) + 16px) 16px 120px';
-  root();const d=S.draw,room=d.room,L=projs().filter(p=>p.id!==d.id).sort((a,b)=>b.u-a.u);
-  o.innerHTML=`<div style="max-width:680px;margin:0 auto"><div class="sh-top"><b>Drawings</b><button class="x" data-f="close">✕</button></div>
-  <div class="glass" style="padding:14px"><b>${esc(d.name||'Untitled')}</b><div class="hint" style="margin:2px 0 0">Current drawing${room?' · live room '+esc(room):''}</div>
-  <div class="btns"><button class="btn small" data-f="rename">Rename</button><button class="btn small" data-f="save">Save to projects</button><button class="btn small main" data-f="new">New drawing</button></div></div>
-  <h2>Live</h2><div class="glass" style="padding:14px">${room?`<div class="hint" style="margin:0 0 8px">Room <b>${esc(room)}</b> — anyone with a link sees and draws here.</div><div class="btns" style="margin-top:0"><button class="btn small main" data-f="lnk">Edit link</button><button class="btn small" data-f="vlnk">View-only link</button><button class="btn small danger" data-f="leave">Leave</button></div>`:`<div class="btns" style="margin-top:0"><button class="btn small main" data-f="start">Start live room</button><button class="btn small" data-f="join">Join with code</button></div>`}</div>
-  <h2>Projects</h2>${L.length?L.map(p=>`<div class="glass" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center"><div style="flex:1;min-width:0"><b>${esc(p.name)}</b><div class="hint" style="margin:2px 0 0">${p.items.length} items · ${fmtD(p.u)}</div></div><button class="btn small main" style="flex:none" data-f="open" data-id="${p.id}">Open</button><button class="btn small danger" style="flex:none" data-f="del" data-id="${p.id}">✕</button></div>`).join(''):'<div class="empty glass">No saved drawings yet.</div>'}</div>`;
-  o.onclick=e=>{
-    const b=e.target.closest('[data-f]');if(!b)return;const f=b.dataset.f,id=b.dataset.id;
-    if(f==='close'){o.remove();return}
-    if(f==='rename'){ask('Drawing name',d.name||'',n=>{if(n.trim()){d.name=n.trim().slice(0,40);save();files()}});return}
-    if(f==='save'){stash();save();flash('Saved to projects');files();return}
-    if(f==='new'){stash();openDraw({id:uid(),name:'Drawing '+(projs().length+1),items:[],links:[],del:{}});cam={x:W/2,y:H/2,k:1};o.remove();return}
-    if(f==='open'){const p=projs().find(x=>x.id===id);if(p){stash();openDraw({id:p.id,name:p.name,items:JSON.parse(JSON.stringify(p.items)),links:JSON.parse(JSON.stringify(p.links||[])),del:{}});o.remove()}return}
-    if(f==='del'){if(confirm('Delete this saved drawing?')){S.projects=projs().filter(x=>x.id!==id);S.dl=S.dl||{};S.dl[id]=Date.now();save();files()}return}
-    if(f==='start'){
-      if(!rUrl()){flash('Set up Cloud Sync first: rooms use your Web App URL');return}
-      try{localStorage.setItem('petal.roomUrl',(S.settings.gasUrl||'').trim()||rUrl())}catch(_){}
-      d.id=d.id||uid();d.name=d.name||'Drawing';d.room=Math.random().toString(36).slice(2,8);RV=0;save();files();return;
-    }
-    if(f==='join'){ask('Room code','',v=>{const c=v.trim().toLowerCase().replace(/[^\w-]/g,'');if(c){o.remove();window.joinRoom(c,false,'')}});return}
-    if(f==='lnk'){copy(linkFor(false));return}
-    if(f==='vlnk'){copy(linkFor(true));return}
-    if(f==='leave'){d.room=null;RDirty=false;save();toolbar();files();return}
-  };
-  document.body.append(o);
-}
-
 function toolbar(){
-  const t=document.getElementById('dtb');if(!t)return;
-  const lv=S.draw&&S.draw.room?`<button class="chip on" data-a="files">● Live ${esc(S.draw.room)}</button>`:'';
-  if(tool==='view'){
-    t.innerHTML=`<button class="chip on" data-tl="pen">Edit</button>${lv}<button class="chip" data-a="fit">Fit</button><button class="chip" data-a="rep">Report</button><button class="chip" data-a="files">Files</button>`;
-    return;
-  }
-  t.innerHTML=TOOLS.map(([k,n])=>`<button class="chip ${tool===k?'on':''}" data-tl="${k}">${n}</button>`).join('')
-    +'<button class="chip" data-a="img">Image</button>'
-    +COLS.map(c=>`<button class="sw2 ${col===c?'on':''}" style="background:${c}" data-col="${c}" aria-label="color"></button>`).join('')
-    +(sel?'<button class="chip" data-a="del">Delete</button>':'')
-    +'<button class="chip" data-a="undo">Undo</button><button class="chip" data-a="fit">Fit</button><button class="chip" data-a="rep">Report</button><button class="chip" data-a="files">Files</button><button class="chip" data-tl="view">View only</button>'+lv;
+ const t=document.getElementById('dtb');if(!t)return;
+ const options=TOOLS.map(([k,n])=>`<option value="${k}" ${tool===k?'selected':''}>${n}</option>`).join('');
+ t.innerHTML=`<div class="drawbar">
+   <select data-draw-tool aria-label="Drawing tool">${options}</select>
+   <select data-draw-col aria-label="Drawing color">${COLS.map((c,i)=>`<option value="${c}" ${col===c?'selected':''}>${['Dark','Pink','Gold','Green'][i]} color</option>`).join('')}</select>
+   <button class="chip" data-a="undo">Undo</button><button class="chip" data-a="fit">Fit</button>
+   <button class="chip" data-a="more" aria-expanded="${moreOpen?'true':'false'}">More ${moreOpen?'▴':'⋯'}</button>
+  </div>
+  <div class="draw-more" ${moreOpen?'':'hidden'}>
+   <button class="chip" data-a="rep">Report</button>
+   <button class="chip" data-a="room">${roomCode?'Room: '+esc(roomCode):'Live room'}</button>
+   <button class="chip ${readOnly?'on':''}" data-a="view">${readOnly?'Exit see-only':'See only'}</button>
+   <button class="chip" data-a="new">New drawing</button>
+   <button class="chip" data-a="project">Save to project</button>
+   <button class="chip" data-a="openproject">Projects</button>
+   <div id="drawRoomStatus" class="draw-room-status" role="status">${esc(roomStatus)}</div>
+  </div>`;
 }
 window.mountDraw=function(){
   const w=document.getElementById('dwrap');if(!w)return;
-  ['drep','dfil'].forEach(i=>{const o=document.getElementById(i);if(o)o.remove()});
-  w.innerHTML='<canvas></canvas><div id="dtb"></div><input type="file" id="dimg" accept="image/*" hidden>';cv=w.firstChild;cx=cv.getContext('2d');
+  const old=document.getElementById('drep');if(old)old.remove();
+  w.innerHTML='<canvas></canvas><div id="dtb"></div>';cv=w.firstChild;cx=cv.getContext('2d');
   dpr=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';
   if(!inited){inited=true;cam={x:W/2,y:H/2,k:1};
     addEventListener('resize',()=>{if(!cv||!cv.isConnected)return;dpr=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';dirty=true});
     if(root().length)setTimeout(fit,0);
   }
   dirty=true;toolbar();if(!looping){looping=true;requestAnimationFrame(frame)}
-  document.getElementById('dimg').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)addImg(f)};
-  document.getElementById('dtb').onclick=e=>{
+  const drawToolbar=document.getElementById('dtb');
+  drawToolbar.onchange=e=>{
+    if(e.target.matches('[data-draw-col]')){
+      if(readOnly){flash('Turn off See only to edit');e.target.value=col;return}
+      col=e.target.value;tool='pen';moreOpen=false;toolbar();return;
+    }
+    if(!e.target.matches('[data-draw-tool]'))return;
+    if(readOnly){flash('Turn off See only to edit');e.target.value=tool;return}
+    tool=e.target.value;moreOpen=false;toolbar();
+  };
+  drawToolbar.onclick=e=>{
     const b=e.target.closest('button');if(!b)return;
-    if(b.dataset.tl){tool=b.dataset.tl;if(tool!=='sel')sel=null;dirty=true}
-    else if(b.dataset.col){col=b.dataset.col;tool='pen';sel=null}
-    else if(b.dataset.a==='undo')undo();
+    if(b.dataset.col){if(readOnly){flash('Turn off See only to edit');return}col=b.dataset.col;tool='pen';moreOpen=false;toolbar();return}
+    if(b.dataset.a==='more'){moreOpen=!moreOpen;toolbar();return}
+    if(b.dataset.a==='undo'){if(readOnly){flash('Turn off See only to edit');return}undo()}
     else if(b.dataset.a==='fit')fit();
     else if(b.dataset.a==='rep')report();
-    else if(b.dataset.a==='files')files();
-    else if(b.dataset.a==='img')document.getElementById('dimg').click();
-    else if(b.dataset.a==='del'&&sel){const L=listOf2(sel);if(L){snap();L.splice(L.indexOf(sel),1);sel=null;save();dirty=true}}
+    else if(b.dataset.a==='room'){joinRoom();return}
+    else if(b.dataset.a==='view'){readOnly=!readOnly;moreOpen=true;toolbar();flash(readOnly?'See-only mode enabled':'Drawing edits enabled');return}
+    else if(b.dataset.a==='new'){newDrawing();}
+    else if(b.dataset.a==='project')saveProject();
+    else if(b.dataset.a==='openproject')openProject();
     toolbar();
   };
   cv.addEventListener('wheel',e=>{e.preventDefault();const f=Math.exp(-e.deltaY*.0015),nk=cl(cam.k*f,.01,80);cam.x=e.clientX-(e.clientX-cam.x)*nk/cam.k;cam.y=e.clientY-(e.clientY-cam.y)*nk/cam.k;cam.k=nk;dirty=true},{passive:false});
   cv.addEventListener('pointerdown',e=>{
     cv.setPointerCapture(e.pointerId);P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(readOnly&&P.size===1){drag={panOnly:true,lx:e.clientX,ly:e.clientY};return}
     if(P.size===2){live=null;drag=null;const[a,b]=[...P.values()];pin={d:Math.hypot(a.x-b.x,a.y-b.y)||1,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,cam:{...cam}};return}
     if(P.size>2)return;
     const[x,y]=s2w(e.clientX,e.clientY);drag={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,x0:x,y0:y,list:deepest(x,y).list};
-    if(tool==='view'){}
-    else if(tool==='pen')live={t:'s',p:[x,y],c:col,w:2.6/cam.k};
+    if(tool==='sel'){const hg=hitGroup(x,y);if(hg&&hg.g&&fade(hg.g,cam.k)>.5&&x>=hg.g.x+hg.g.w-18/cam.k&&y>=hg.g.y+hg.g.h-18/cam.k){drag.resizeGroup=hg.g;drag.resizeStart={w:hg.g.w,h:hg.g.h,x,y};}}
+    if(tool==='pen')live={t:'s',p:[x,y],c:col,w:2.6/cam.k};
     else if(tool==='group')live={t:'r',x,y,w:0,h:0};
     else if(tool==='erase')erase(x,y);
-    else if(tool==='sel'){
-      drag.prev=sel;const hh=hitHandle(x,y);
-      if(hh){drag.rs=hh}else{drag.pk=pick(x,y);drag.g=drag.pk&&drag.pk.list?drag.pk.it:null}
-    }
-    else if(tool==='link'){const h=pick(x,y);drag.g=h&&h.it.t==='g'&&h.list?h.it:null;if(drag.g)live={t:'l',x1:x,y1:y,x2:x,y2:y}}
+    else if(tool==='sel'){const h=hitGroup(x,y);drag.g=h&&h.list?h.g:null}
+    else if(tool==='link'){const h=hitGroup(x,y);drag.g=h&&h.list?h.g:null;if(drag.g)live={t:'l',x1:x,y1:y,x2:x,y2:y}}
     dirty=true;
   });
   cv.addEventListener('pointermove',e=>{
@@ -1936,38 +1929,48 @@ window.mountDraw=function(){
       const wx=(pin.mx-c0.x)/c0.k,wy=(pin.my-c0.y)/c0.k;cam.k=nk;cam.x=mx-wx*nk;cam.y=my-wy*nk;dirty=true;return;
     }
     if(!drag)return;
-    const[x,y]=s2w(e.clientX,e.clientY),dx=e.clientX-drag.lx,dy=e.clientY-drag.ly;
+    const dx=e.clientX-drag.lx,dy=e.clientY-drag.ly;
+    if(drag.panOnly){cam.x+=dx;cam.y+=dy;drag.lx=e.clientX;drag.ly=e.clientY;dirty=true;return}
+    const[x,y]=s2w(e.clientX,e.clientY);
     if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>6)drag.moved=true;
     drag.lx=e.clientX;drag.ly=e.clientY;
-    if(tool==='pen'&&live){live.p.push(x,y)}
+    if(drag.resizeGroup){snapOnce();drag.resizeGroup.w=Math.max(70,drag.resizeStart.w+(x-drag.resizeStart.x));drag.resizeGroup.h=Math.max(55,drag.resizeStart.h+(y-drag.resizeStart.y))}
+    else if(tool==='pen'&&live){live.p.push(x,y)}
     else if(tool==='group'&&live){live.x=Math.min(drag.x0,x);live.y=Math.min(drag.y0,y);live.w=Math.abs(x-drag.x0);live.h=Math.abs(y-drag.y0)}
     else if(tool==='erase')erase(x,y);
-    else if(tool==='sel'&&drag.rs&&sel&&drag.moved){
-      snapOnce();
-      const cur=bb(sel),ax=drag.rs.ax,ay=drag.rs.ay,mn=8/cam.k;
-      let sx=cur.w>1e-6?Math.max(mn,Math.abs(x-ax))/cur.w:1,sy=cur.h>1e-6?Math.max(mn,Math.abs(y-ay))/cur.h:1;
-      if(sel.t!=='g'){const u=Math.abs(sx-1)>Math.abs(sy-1)?sx:sy;sx=sy=u}
-      scaleItem(sel,ax,ay,sx,sy);
-    }
-    else if(tool==='sel'&&drag.g&&drag.moved){snapOnce();move(drag.g,dx/cam.k,dy/cam.k);sel=drag.g}
-    else if(tool==='sel'&&(drag.g||drag.rs)){}
+    else if(tool==='sel'&&drag.g&&drag.moved){snapOnce();move(drag.g,dx/cam.k,dy/cam.k)}
+    else if(tool==='sel'&&drag.item&&drag.moved){snapOnce();move(drag.item,dx/cam.k,dy/cam.k)}
     else if(tool==='link'&&live){live.x2=x;live.y2=y}
-    else if(tool==='sel'||tool==='text'||tool==='link'||tool==='view'){cam.x+=dx;cam.y+=dy}
+    else if(tool==='sel'||tool==='text'||tool==='link'){cam.x+=dx;cam.y+=dy}
     dirty=true;
   });
   const up=e=>{
     P.delete(e.pointerId);
     if(pin){if(P.size<2)pin=null;drag=null;live=null;return}
     if(!drag)return;const d=drag;drag=null;
-    if(tool==='pen'&&live){if(live.p.length>=4||!d.moved){snap();d.list.push(live);save()}live=null}
+    if(d.panOnly){dirty=true;return}
+    if(d.resizeGroup){drawSave();dirty=true}
+    else if(tool==='pen'&&live){if(live.p.length>=4||!d.moved){snap();d.list.push(live);drawSave()}live=null}
     else if(tool==='group'&&live){const r=live;live=null;if(r.w*cam.k>14&&r.h*cam.k>14)makeGroup(r)}
-    else if(tool==='link'&&live){const a=d.g,l=live;live=null;const h=pick(l.x2,l.y2),b=h&&h.it.t==='g'&&h.list?h.it:null;
-      if(a&&b&&a!==b&&!links().some(k=>(k.a===a.id&&k.b===b.id)||(k.a===b.id&&k.b===a.id))){snap();links().push({id:uid(),a:a.id,b:b.id});save()}}
-    else if(tool==='erase')save();
-    else if(tool==='view'&&!d.moved){const h=pick(d.x0,d.y0);if(h&&h.it.t==='g'&&fade(h.it,cam.k)<.5)zoomTo(h.it)}
+    else if(tool==='link'&&live){const a=d.g,l=live;live=null;const h=hitGroup(l.x2,l.y2),b=h&&h.list?h.g:null;
+      if(a&&b&&a!==b&&!links().some(k=>(k.a===a.id&&k.b===b.id)||(k.a===b.id&&k.b===a.id))){snap();links().push({a:a.id,b:b.id});drawSave()}}
+    else if(tool==='erase')drawSave();
+    else if(tool==='edit'&&!d.moved){
+      const list=d.list;let target=null;
+      for(let i=list.length-1;i>=0;i--){const q=bb(list[i]);if(xyInside(d.x0,d.y0,q)){target=list[i];break}}
+      if(!target){flash('Zoom in and tap a text or image inside a container');}
+      else if(target.t==='t'){ask('Edit text',target.v,v=>{if(v==null)return;snap();target.v=v.slice(0,20000);drawSave();dirty=true},true)}
+      else if(target.t==='im'){const old=target;pickDrawingImage(image=>{snap();imageCache.delete(old.src);old.src=image.src;drawSave();dirty=true})}
+      else if(target.t==='g')ask('Rename container',target.l,v=>{if(v&&v.trim()){snap();target.l=v.trim().slice(0,80);drawSave();dirty=true}})
+    }
+    else if(tool==='image'&&!d.moved){
+      const targetList=d.list,ix=d.x0,iy=d.y0;
+      pickDrawingImage(image=>{const max=240/cam.k,scale=Math.min(max/image.width,max/image.height,1);snap();targetList.push({t:'im',src:image.src,x:ix,y:iy,w:Math.max(24,image.width*scale),h:Math.max(24,image.height*scale)});drawSave();dirty=true});
+    }
     else if(tool==='text'&&!d.moved){const k0=cam.k,sx=d.sx,sy=d.sy,wx=d.x0,wy=d.y0;ask('Paste or type your text','',v=>{
       if(!v||!v.trim())return;
       v=v.replace(/\r/g,'').replace(/\t/g,'    ').replace(/\s+$/,'').slice(0,20000);
+      /* long lines are word-wrapped into a narrow column so lots of words take a small space */
       const COLS=36,wrapL=l=>{
         if(l.length<=COLS+4)return[l];
         const ind=l.match(/^\s*/)[0].slice(0,8),out=[];let cur='';
@@ -1984,36 +1987,29 @@ window.mountDraw=function(){
       if(lots)sz=Math.min(sz,.5*W/k0/Math.max(m*.6,1),.6*(H-220)/k0/(n*1.3));
       snap();
       const it={t:'t',x:wx,y:wy,s:sz,v,c:col};
-      if(!lots){d.list.push(it);save();dirty=true;return}
+      if(!lots){d.list.push(it);drawSave();dirty=true;return}
+      /* lots of words: put them in a small group box (words only, no drawing needed) */
       const b=bb(it),pad=10/k0,top=26/k0,gw=b.w+2*pad,gh=b.h+2*pad+top;
       let px=sx-gw*k0/2,py=sy-gh*k0/2;
       px=cl(px,8,Math.max(8,W-8-gw*k0));py=cl(py,70,Math.max(70,H-110-gh*k0));
       const gx=(px-cam.x)/k0,gy=(py-cam.y)/k0;
       it.x=gx+pad;it.y=gy+top+pad+sz;
       const title=(ls.find(l=>l.trim())||'Notes').trim().slice(0,28);
-      d.list.push({t:'g',id:uid(),l:title,x:gx,y:gy,w:gw,h:gh,i:[it]});
-      save();dirty=true;
+      d.list.push({t:'g',id:Math.random().toString(36).slice(2,8),l:title,x:gx,y:gy,w:gw,h:gh,i:[it]});
+      drawSave();dirty=true;
     },true)}
     else if(tool==='sel'){
-      if(d.rs||(d.g&&d.moved)){save()}
+      if((d.g||d.item)&&d.moved)drawSave();
       else if(!d.moved){
-        const p=d.pk;
-        if(!p){sel=null}
-        else{
-          const it=p.it;
-          if(it.t==='g'&&fade(it,cam.k)<.5){sel=it;zoomTo(it)}
-          else if(d.prev===it){
-            if(it.t==='g')ask('Rename (leave empty to ungroup)',it.l,n=>{snap();
-              if(n.trim())it.l=n.trim().slice(0,40);
-              else{const L=listOf2(it);if(L){L.splice(L.indexOf(it),1,...it.i)}sel=null}
-              save();dirty=true;toolbar()});
-            else if(it.t==='t')ask('Edit text',it.v,v=>{if(!v||!v.trim())return;snap();it.v=v.replace(/\r/g,'');save();dirty=true},true);
-          }
-          else sel=it;
-        }
+        if(d.item)return;
+        const h=hitGroup(d.x0,d.y0);
+        if(h){if(fade(h.g,cam.k)<.5)zoomTo(h.g);else ask('Rename (leave empty to ungroup)',h.g.l,n=>{snap();
+          if(n.trim())h.g.l=n.trim().slice(0,40);
+          else{const L=h.list||root();const i=L.indexOf(h.g);if(i>=0){L.splice(i,1,...h.g.i)}}
+          drawSave();dirty=true})}
       }
     }
-    dirty=true;toolbar();
+    dirty=true;
   };
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
 };
@@ -2024,10 +2020,8 @@ $('#fab').innerHTML=ic('plus',30);
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 (function(){const lim=Date.now()-30*864e5,n=S.tasks.length;S.tasks=S.tasks.filter(t=>!(t.spawn&&t.done&&(t.doneAt||0)<lim));if(S.tasks.length!==n)save()})();
 if(hasCloud()&&(isDirty()||(!getCloudAt()&&S.tasks.length))){setDirty(true);schedulePush()}
-resetDSN();
 render();tick();loadFromGas();
-addEventListener('hashchange',joinFromHash);
-const fromLink=joinFromHash()||openFromHash();
+const fromLink=openFromHash();
 initNorie();
 if(!fromLink&&S.settings.greet!==false)showHello();
 </script>
