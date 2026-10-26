@@ -1536,89 +1536,129 @@ function initNorie(){
 /* ---------- DRAW dashboard: sketch systems, group them, zoom out -> names -> report ---------- */
 (function(){
 let cam={x:0,y:0,k:1},tool='pen',col='#3a2a30',cv,cx,live=null,P=new Map(),pin=null,drag=null,W=0,H=0,dpr=1,dirty=true,looping=false,hist=[],inited=false;
-let roomCode='',roomVer=0,roomTimer=null,roomPushTimer=null,roomBusy=false,roomPending=false,readOnly=false,moreOpen=false,roomStatus='Not connected',roomErrorShown=false;
-let roomPeer=null,roomConn=null,roomPeers=new Map(),roomRole='',remotePreview=new Map(),remoteCursors=new Map(),peerLoading=null,roomOrigin='';
+let roomCode='',roomPushTimer=null,roomPending=false,readOnly=false,moreOpen=false,roomStatus='Not connected';
+let roomRole='',remotePreview=new Map(),remoteCursors=new Map();
 const imageCache=new Map();
 function cloneItem(it){const o={...it};if(it.p)o.p=it.p.slice();if(it.i)o.i=it.i.map(cloneItem);return o}
 function ensureItemIds(items){for(const it of items){if(!it.id)it.id='di_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);if(it.t==='g')ensureItemIds(it.i||[])}}
 function drawState(){ensureItemIds(root());return {items:root().map(cloneItem),links:JSON.parse(JSON.stringify(links()))}}
-function mergeItemLists(localItems,remoteItems){
- const local=Array.isArray(localItems)?localItems:[],remote=Array.isArray(remoteItems)?remoteItems:[];
- const byId=new Map(local.map(it=>[it.id,it]));const out=local.map(cloneItem);
- const outMap=new Map(out.map(it=>[it.id,it]));
- for(const ri of remote){
-  if(!ri)continue;const li=byId.get(ri.id);
-  if(!li){out.push(cloneItem(ri));continue}
-  const oi=outMap.get(ri.id);
-  if(li.t==='g'&&ri.t==='g'&&oi){oi.i=mergeItemLists(li.i,ri.i);}
- }
- return out;
-}
-function mergeDraws(localDraw,remoteDraw){
- const a=localDraw||{items:[],links:[]},b=remoteDraw||{items:[],links:[]};
- const mergedLinks=[],seen=new Set();
- for(const l of [...(a.links||[]),...(b.links||[])]){const key=[l.a,l.b].sort().join('|');if(!seen.has(key)){seen.add(key);mergedLinks.push({...l})}}
- return {items:mergeItemLists(a.items,b.items),links:mergedLinks};
-}
 function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('drawRoomStatus');if(el)el.textContent=msg}
 function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
-function roomBroadcast(message,exclude=null){
- const packet=JSON.stringify(message);
- if(roomRole==='host'){
-  for(const [id,c] of roomPeers){if(id!==exclude&&c&&c.open){try{c.send(packet)}catch(_){}}}
- }else if(roomConn&&roomConn.open){try{roomConn.send(packet)}catch(_){}}
+
+/* ===== LIVE ROOM v2: relay through public MQTT brokers (works on any network, no accounts, no Apps Script) ===== */
+const MQ_LIB=['https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js','https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js'];
+const MQ_BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+let mqLoading=null,mqLinks=[],mqMe='',mqSeen=new Set(),mqLastPrev=0,mqLastCur=0,mqWaitT=null,mqRetryT=null,mqGotState=false,mqPendingDraw=null,mqPrevActive=false,mqAnnounced=false;
+function mqLoad(){
+ if(window.mqtt)return Promise.resolve();
+ if(mqLoading)return mqLoading;
+ mqLoading=(async()=>{
+  for(const u of MQ_LIB){
+   try{await new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)});if(window.mqtt)return}catch(_){}
+  }
+  mqLoading=null;throw new Error('Could not load the live-room library. Check your internet.');
+ })();
+ return mqLoading;
 }
-function applyRoomMessage(msg,from){
- if(!msg||typeof msg!=='object')return;
- if(msg.type==='state'&&msg.draw){
-  if(drag||live){return}
-  S.draw={items:Array.isArray(msg.draw.items)?msg.draw.items:[],links:Array.isArray(msg.draw.links)?msg.draw.links:[]};ensureItemIds(root());hist=[];dirty=true;save();
-  if(roomRole==='host')roomBroadcast({type:'state',draw:drawState()},from);
- }else if(msg.type==='preview'){
-  if(msg.item)remotePreview.set(from,msg.item);else remotePreview.delete(from);dirty=true;if(roomRole==='host')roomBroadcast(msg,from);
- }else if(msg.type==='cursor'){
-  if(msg.cursor&&msg.cursor.x!==-999999)remoteCursors.set(from,msg.cursor);else remoteCursors.delete(from);dirty=true;if(roomRole==='host')roomBroadcast(msg,from);
- }else if(msg.type==='hello'){
-  const state={type:'state',draw:drawState()};try{if(roomRole==='host'&&roomPeers.get(from)?.open)roomPeers.get(from).send(JSON.stringify(state));else if(roomConn&&roomConn.open)roomConn.send(JSON.stringify(state))}catch(_){}
+const mqTop=()=>'norie/v1/'+roomCode;
+function mqStatus(){
+ if(!roomCode)return;
+ const n=mqLinks.filter(l=>l.connected).length;
+ if(!n){updateRoomStatus('Connecting to relay…');return}
+ updateRoomStatus(roomRole==='host'?'Live · hosting “'+roomCode+'”':mqGotState?'Live · joined “'+roomCode+'”':'Joined · waiting for the host’s drawing…');
+}
+function mqSend(sub,obj,opts){
+ if(!mqLinks.some(l=>l.connected))return false;
+ const msg=JSON.stringify(Object.assign({id:mqMe+Date.now().toString(36)+Math.random().toString(36).slice(2,5),from:mqMe},obj));
+ if(msg.length>900000){updateRoomStatus('Drawing too big to share — remove some images');return true}
+ for(const l of mqLinks){if(l.connected){try{l.client.publish(mqTop()+'/'+sub,msg,opts)}catch(_){}}}
+ return true;
+}
+function mqApply(draw){
+ if(drag||live){ /* never swap the drawing under someone's finger */
+  mqPendingDraw=draw;clearTimeout(mqRetryT);
+  mqRetryT=setTimeout(()=>{const d=mqPendingDraw;mqPendingDraw=null;if(d)mqApply(d)},300);return;
+ }
+ const first=!mqGotState;
+ if(first&&roomRole!=='host'&&(root().length||links().length)){ /* safety copy of what you had before joining */
+  S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
+  S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:('Before joining '+roomCode).slice(0,80),updatedAt:Date.now(),draw:drawState()});
+ }
+ mqGotState=true;clearTimeout(mqWaitT);
+ S.draw={items:Array.isArray(draw.items)?draw.items:[],links:Array.isArray(draw.links)?draw.links:[]};
+ ensureItemIds(root());hist=[];dirty=true;save();
+ if(first)fit();
+ mqStatus();toolbar();
+}
+function mqIn(topic,buf,pkt){
+ let m;try{m=JSON.parse(buf.toString())}catch(_){return}
+ if(!m||m.from===mqMe)return;
+ if(m.id){if(mqSeen.has(m.id))return;mqSeen.add(m.id);if(mqSeen.size>300)mqSeen.delete(mqSeen.values().next().value)}
+ const sub=topic.slice(topic.lastIndexOf('/')+1);
+ if(sub==='s'&&m.draw){
+  /* saved copy on the relay: only a joiner who has nothing yet uses it */
+  if(pkt&&pkt.retain&&(roomRole==='host'||mqGotState))return;
+  mqApply(m.draw);
+ }else if(sub==='e'){
+  if(m.type==='preview'){if(m.item&&m.item.t==='s')remotePreview.set(m.from,m.item);else remotePreview.delete(m.from);dirty=true}
+  else if(m.type==='cursor'){if(m.cursor&&m.cursor.x!==-999999)remoteCursors.set(m.from,m.cursor);else remoteCursors.delete(m.from);dirty=true}
+  else if(m.type==='hello'){roomPending=true;scheduleRoomPush(200)}
  }
 }
-function attachRoomConnection(conn){
- const id=conn.peer;roomPeers.set(id,conn);
- conn.on('open',()=>{
-  if(roomRole==='host'){
-   updateRoomStatus('Live · '+roomPeers.size+' other user(s)');
-   try{conn.send(JSON.stringify({type:'state',draw:drawState()}))}catch(_){}
-  }else{roomConn=conn;updateRoomStatus('Live · connected to room host');try{conn.send(JSON.stringify({type:'hello'}))}catch(_){}}
- });
- conn.on('data',raw=>{let msg;try{msg=typeof raw==='string'?JSON.parse(raw):raw}catch(_){return}applyRoomMessage(msg,id)});
- conn.on('close',()=>{roomPeers.delete(id);remotePreview.delete(id);remoteCursors.delete(id);if(roomConn===conn)roomConn=null;dirty=true;updateRoomStatus(roomRole==='host'?'Room open · waiting for users':'Room connection lost · rejoin the room')});
- conn.on('error',()=>updateRoomStatus('Peer connection issue · retry joining'));
-}
-const PEER_OPT={config:{iceServers:[
- {urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'},
- {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
- {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
- {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}]}};
-function loadPeerJS(){
- if(window.Peer)return Promise.resolve();if(peerLoading)return peerLoading;
- const urls=['https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'];
- peerLoading=(async()=>{
-  for(const u of urls){try{await new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)});if(window.Peer)return}catch(_){}}
-  peerLoading=null;throw new Error('Could not load the live-room library. Check internet.');
- })();
- return peerLoading;
-}
-function roomPeerId(code){let h=2166136261;for(let i=0;i<code.length;i++){h^=code.charCodeAt(i);h=Math.imul(h,16777619)}return 'norie-room-'+(h>>>0).toString(36)+'-'+code.length.toString(36)}
 async function pushRoom(){
- if(!roomCode||readOnly||!roomPending)return;roomPending=false;
- const state={type:'state',draw:drawState()};roomBroadcast(state);updateRoomStatus(roomRole==='host'?'Live room · broadcasting':'Live · sending changes');
+ if(!roomCode||readOnly||!roomPending)return;
+ if(roomRole!=='host'&&!mqGotState)return; /* a joiner must receive the room's drawing first, never overwrite it */
+ roomPending=false;
+ if(!mqSend('s',{draw:drawState()},{qos:1,retain:true}))roomPending=true; /* retry when connected */
 }
-async function pullRoom(){} // Peer-to-peer rooms push updates directly; no polling backend is used.
-function roomLoop(){}
-function sendLivePreview(){if(!roomCode)return;roomBroadcast({type:'preview',item:live?cloneItem(live):null});}
-function sendLiveCursor(x,y){if(!roomCode)return;roomBroadcast({type:'cursor',cursor:{x,y,name:(S.settings&&S.settings.name)||'Collaborator'}})}
-function stopRoom(){try{if(roomConn)roomConn.close()}catch(_){};for(const c of roomPeers.values())try{c.close()}catch(_){};roomPeers.clear();roomConn=null;remotePreview.clear();remoteCursors.clear();try{if(roomPeer)roomPeer.destroy()}catch(_){}roomPeer=null;roomRole='';roomCode='';updateRoomStatus('Not connected')}
+function sendLivePreview(){
+ if(!roomCode||!mqLinks.length)return;
+ const item=(live&&live.t==='s')?cloneItem(live):null;
+ if(!item&&!mqPrevActive)return;
+ const n=Date.now();if(item&&n-mqLastPrev<70)return;
+ mqLastPrev=n;mqPrevActive=!!item;
+ mqSend('e',{type:'preview',item},{qos:0});
+}
+function sendLiveCursor(x,y){
+ if(!roomCode||!mqLinks.length)return;
+ const n=Date.now();if(x!==-999999&&n-mqLastCur<90)return;mqLastCur=n;
+ mqSend('e',{type:'cursor',cursor:{x,y,name:(S.settings&&S.settings.name)||'Collaborator'}},{qos:0});
+}
+function stopRoom(){
+ clearTimeout(mqWaitT);clearTimeout(mqRetryT);
+ for(const l of mqLinks){try{l.client.end(true)}catch(_){}}
+ mqLinks=[];remotePreview.clear();remoteCursors.clear();
+ roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;dirty=true;updateRoomStatus('Not connected');
+}
+async function startRoom(clean,role){
+ if(roomCode)stopRoom();
+ updateRoomStatus('Connecting…');
+ try{await mqLoad()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
+ roomCode=clean;roomRole=role;mqGotState=false;mqAnnounced=false;mqSeen.clear();
+ mqMe='n'+Math.random().toString(36).slice(2,9);
+ mqLinks=MQ_BROKERS.map(url=>{
+  const l={url,connected:false,client:null};
+  const c=l.client=mqtt.connect(url,{clientId:'norie_'+mqMe+'_'+Math.random().toString(36).slice(2,5),clean:true,reconnectPeriod:2500,connectTimeout:9000,keepalive:30});
+  c.on('connect',()=>{
+   if(roomCode!==clean)return;
+   l.connected=true;
+   c.subscribe([mqTop()+'/s',mqTop()+'/e'],{qos:1});
+   mqStatus();
+   if(role==='host'){roomPending=true;scheduleRoomPush(400)}
+   else if(!mqGotState)setTimeout(()=>{if(!mqGotState)mqSend('e',{type:'hello'},{qos:0})},700);
+   if(!mqAnnounced){
+    mqAnnounced=true;toolbar();
+    flash(role==='host'?'Room “'+clean+'” is live — others tap Join':'Joining room “'+clean+'”…');
+    if(role!=='host'){clearTimeout(mqWaitT);mqWaitT=setTimeout(()=>{if(!mqGotState&&roomCode===clean){updateRoomStatus('Nothing in this room yet — ask the host to tap Host first');flash('No host found for “'+clean+'”')}},9000)}
+   }
+  });
+  c.on('message',(t,p,pkt)=>{if(roomCode===clean)mqIn(t,p,pkt)});
+  c.on('close',()=>{l.connected=false;mqStatus()});
+  c.on('error',()=>{});
+  return l;
+ });
+}
 function saveProject(){
  if(readOnly){flash('Turn off See only to save changes');return}
  const name=prompt('Project folder name','My drawing');if(!name||!name.trim())return;
@@ -1645,46 +1685,12 @@ function openProject(){
  if(!confirm('Open “'+ps[n].name+'”? The current drawing will be replaced.'))return;
  S.draw={items:(ps[n].draw.items||[]).map(cloneItem),links:(ps[n].draw.links||[]).slice()};ensureItemIds(root());hist=[];fit();drawSave();
 }
-async function startRoom(clean,role){
- if(roomPeer||roomCode)stopRoom();
- updateRoomStatus('Connecting…');
- try{await loadPeerJS()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
- roomCode=clean;roomRole=role;roomErrorShown=false;
- const hostId=roomPeerId(clean),fail=m=>{updateRoomStatus(m);flash(m)};
- if(role==='host'){
-  const p=roomPeer=new Peer(hostId,PEER_OPT);
-  p.on('open',()=>{updateRoomStatus('Room open · waiting for others');toolbar();flash('Room “'+clean+'” is open — others tap Join')});
-  p.on('connection',c=>attachRoomConnection(c));
-  p.on('disconnected',()=>{try{p.reconnect()}catch(_){}});
-  p.on('error',e=>{
-   if(e.type==='unavailable-id'){stopRoom();fail('Room name already in use (or still closing). Wait 1 min or pick another name.');toolbar();return}
-   if(['network','server-error','socket-error'].includes(e.type)){updateRoomStatus('Server issue · retrying…');return}
-   fail('Room error: '+(e.type||e.message));
-  });
- }else{
-  const p=roomPeer=new Peer(PEER_OPT);let tries=0,done=false,t=0;
-  const retry=()=>{if(tries>=3){stopRoom();fail('Could not reach the host. Host must tap Host first, same room name, Norie open.');toolbar();return}connect()};
-  const connect=()=>{
-   if(done||roomPeer!==p)return;
-   tries++;updateRoomStatus('Joining “'+clean+'”… ('+tries+')');
-   const c=p.connect(hostId,{reliable:true});roomConn=c;attachRoomConnection(c);
-   t=setTimeout(()=>{if(!c.open&&!done&&roomPeer===p){try{c.close()}catch(_){}roomPeers.delete(hostId);retry()}},9000);
-   c.on('open',()=>{done=true;clearTimeout(t);toolbar();flash('Joined room “'+clean+'”')});
-  };
-  p.on('open',connect);
-  p.on('disconnected',()=>{try{p.reconnect()}catch(_){}});
-  p.on('error',e=>{
-   if(e.type==='peer-unavailable'){clearTimeout(t);roomPeers.delete(hostId);setTimeout(()=>{if(roomPeer===p&&!done)retry()},1500);return}
-   fail('Room error: '+(e.type||e.message));
-  });
- }
-}
 function joinRoom(){
  let o=document.getElementById('droom');if(o)o.remove();
  o=document.createElement('div');o.id='droom';
  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(340px,100%)"><b style="font-size:18px">Live room</b>
- <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name.</div>
+ <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name. Works on any network. Use an unusual name — anyone who knows it can join.</div>
  <input id="drn" style="margin-top:12px" autocomplete="off" autocapitalize="off" placeholder="room name">
  <div class="btns" style="margin-top:14px"><button class="btn main small" id="drh">Host</button><button class="btn gold small" id="drj">Join</button></div>
  <div class="btns" style="margin-top:8px"><button class="btn small" id="drc">Cancel</button>${roomCode?'<button class="btn danger small" id="drl">Leave room</button>':''}</div></div>`;
