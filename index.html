@@ -1527,6 +1527,7 @@ function initNorie(){
 (function(){
 let cam={x:0,y:0,k:1},tool='pen',col='#3a2a30',cv,cx,live=null,P=new Map(),pin=null,drag=null,W=0,H=0,dpr=1,dirty=true,looping=false,hist=[],inited=false;
 let roomCode='',roomVer=0,roomTimer=null,roomPushTimer=null,roomBusy=false,roomPending=false,readOnly=false,moreOpen=false,roomStatus='Not connected',roomErrorShown=false;
+let roomPeer=null,roomConn=null,roomPeers=new Map(),roomRole='',remotePreview=new Map(),remoteCursors=new Map(),peerLoading=null,roomOrigin='';
 const imageCache=new Map();
 function cloneItem(it){const o={...it};if(it.p)o.p=it.p.slice();if(it.i)o.i=it.i.map(cloneItem);return o}
 function ensureItemIds(items){for(const it of items){if(!it.id)it.id='di_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);if(it.t==='g')ensureItemIds(it.i||[])}}
@@ -1550,43 +1551,55 @@ function mergeDraws(localDraw,remoteDraw){
  return {items:mergeItemLists(a.items,b.items),links:mergedLinks};
 }
 function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('drawRoomStatus');if(el)el.textContent=msg}
-function scheduleRoomPush(delay=450){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
+function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
-async function roomCall(body){
- const url=(S.settings.gasUrl||'').trim();if(!url)throw new Error('Add the Apps Script Web App URL in Settings first');if(!navigator.onLine)throw new Error('You are offline');
- const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),18000);
- try{
-  const res=await fetch(url,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({userId:getUserKey()},body)),signal:ctl.signal});
-  const tx=await res.text();let data;try{data=JSON.parse(tx)}catch(_){throw new Error('Apps Script did not return JSON. Redeploy the latest Code.js as a Web App and check the URL.')}
-  if(!res.ok)throw new Error('Server HTTP '+res.status);if(!data||!data.status)throw new Error(data&&data.message||'Invalid room response');return data;
- }finally{clearTimeout(to)}
+function roomBroadcast(message,exclude=null){
+ const packet=JSON.stringify(message);
+ if(roomRole==='host'){
+  for(const [id,c] of roomPeers){if(id!==exclude&&c&&c.open){try{c.send(packet)}catch(_){}}}
+ }else if(roomConn&&roomConn.open){try{roomConn.send(packet)}catch(_){}}
 }
+function applyRoomMessage(msg,from){
+ if(!msg||typeof msg!=='object')return;
+ if(msg.type==='state'&&msg.draw){
+  if(drag||live){return}
+  S.draw={items:Array.isArray(msg.draw.items)?msg.draw.items:[],links:Array.isArray(msg.draw.links)?msg.draw.links:[]};ensureItemIds(root());hist=[];dirty=true;save();
+  if(roomRole==='host')roomBroadcast({type:'state',draw:drawState()},from);
+ }else if(msg.type==='preview'){
+  if(msg.item)remotePreview.set(from,msg.item);else remotePreview.delete(from);dirty=true;if(roomRole==='host')roomBroadcast(msg,from);
+ }else if(msg.type==='cursor'){
+  if(msg.cursor&&msg.cursor.x!==-999999)remoteCursors.set(from,msg.cursor);else remoteCursors.delete(from);dirty=true;if(roomRole==='host')roomBroadcast(msg,from);
+ }else if(msg.type==='hello'){
+  const state={type:'state',draw:drawState()};try{if(roomRole==='host'&&roomPeers.get(from)?.open)roomPeers.get(from).send(JSON.stringify(state));else if(roomConn&&roomConn.open)roomConn.send(JSON.stringify(state))}catch(_){}
+ }
+}
+function attachRoomConnection(conn){
+ const id=conn.peer;roomPeers.set(id,conn);
+ conn.on('open',()=>{
+  if(roomRole==='host'){
+   updateRoomStatus('Live · '+roomPeers.size+' other user(s)');
+   try{conn.send(JSON.stringify({type:'state',draw:drawState()}))}catch(_){}
+  }else{roomConn=conn;updateRoomStatus('Live · connected to room host');try{conn.send(JSON.stringify({type:'hello'}))}catch(_){}}
+ });
+ conn.on('data',raw=>{let msg;try{msg=typeof raw==='string'?JSON.parse(raw):raw}catch(_){return}applyRoomMessage(msg,id)});
+ conn.on('close',()=>{roomPeers.delete(id);remotePreview.delete(id);remoteCursors.delete(id);if(roomConn===conn)roomConn=null;dirty=true;updateRoomStatus(roomRole==='host'?'Room open · waiting for users':'Room connection lost · rejoin the room')});
+ conn.on('error',()=>updateRoomStatus('Peer connection issue · retry joining'));
+}
+function loadPeerJS(){
+ if(window.Peer)return Promise.resolve();if(peerLoading)return peerLoading;
+ peerLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';script.onload=()=>window.Peer?resolve():reject(new Error('PeerJS did not load'));script.onerror=()=>reject(new Error('Could not load peer connection library. Check internet access.'));document.head.appendChild(script)});
+ return peerLoading;
+}
+function roomPeerId(code){let h=2166136261;for(let i=0;i<code.length;i++){h^=code.charCodeAt(i);h=Math.imul(h,16777619)}return 'norie-room-'+(h>>>0).toString(36)+'-'+code.length.toString(36)}
 async function pushRoom(){
- if(!roomCode||readOnly||!roomPending||roomBusy)return;
- roomBusy=true;roomPending=false;updateRoomStatus('Sending changes…');
- try{
-  const r=await roomCall({action:'room',op:'put',room:roomCode,base:roomVer,draw:drawState()});
-  if(r.status==='ok'){
-   roomVer=Number(r.ver)||0;roomErrorShown=false;updateRoomStatus('Connected · version '+roomVer);
-  }else if(r.status==='stale'&&r.draw){
-   roomVer=Number(r.ver)||0;S.draw=mergeDraws(drawState(),r.draw);hist=[];dirty=true;save();roomPending=true;updateRoomStatus('Merging another user’s changes…');
-  }else throw new Error(r.message||('Unexpected room status: '+r.status));
- }catch(e){roomPending=true;updateRoomStatus('Room error · retrying');if(!roomErrorShown){flash('Live room save failed: '+(e&&e.message?e.message:'check Apps Script deployment'));roomErrorShown=true}}
- finally{roomBusy=false;if(roomPending&&roomCode)setTimeout(()=>scheduleRoomPush(0),navigator.onLine?650:2500)}
+ if(!roomCode||readOnly||!roomPending)return;roomPending=false;
+ const state={type:'state',draw:drawState()};roomBroadcast(state);updateRoomStatus(roomRole==='host'?'Live room · broadcasting':'Live · sending changes');
 }
-async function pullRoom(){
- if(!roomCode||roomBusy||!hasCloud()||!navigator.onLine)return;
- try{
-  const r=await roomCall({action:'room',op:'get',room:roomCode,since:roomVer});
-  if(r.status==='same'){if(!roomPending)updateRoomStatus('Connected · version '+roomVer);return}
-  if(r.status!=='ok')throw new Error(r.message||('Unexpected room status: '+r.status));
-  const ver=Number(r.ver)||0;if(ver===roomVer)return;
-  if(drag||live){updateRoomStatus('Other user changed room · syncing after your stroke');return}
-  if(roomPending){S.draw=mergeDraws(drawState(),r.draw||{items:[],links:[]});roomVer=ver;hist=[];dirty=true;save();roomPending=true;updateRoomStatus('Merging another user’s changes…');scheduleRoomPush(150)}
-  else{roomVer=ver;if(r.draw)S.draw={items:r.draw.items||[],links:r.draw.links||[]};else S.draw={items:[],links:[]};ensureItemIds(root());hist=[];dirty=true;save();updateRoomStatus('Connected · version '+roomVer)}
- }catch(e){updateRoomStatus('Room error · check connection');if(!roomErrorShown){flash('Live room update failed: '+(e&&e.message?e.message:'check Apps Script deployment'));roomErrorShown=true}}
-}
-function roomLoop(){clearInterval(roomTimer);if(roomCode)roomTimer=setInterval(pullRoom,1200)}
+async function pullRoom(){} // Peer-to-peer rooms push updates directly; no polling backend is used.
+function roomLoop(){}
+function sendLivePreview(){if(!roomCode)return;roomBroadcast({type:'preview',item:live?cloneItem(live):null});}
+function sendLiveCursor(x,y){if(!roomCode)return;roomBroadcast({type:'cursor',cursor:{x,y,name:(S.settings&&S.settings.name)||'Collaborator'}})}
+function stopRoom(){try{if(roomConn)roomConn.close()}catch(_){};for(const c of roomPeers.values())try{c.close()}catch(_){};roomPeers.clear();roomConn=null;remotePreview.clear();remoteCursors.clear();try{if(roomPeer)roomPeer.destroy()}catch(_){}roomPeer=null;roomRole='';roomCode='';updateRoomStatus('Not connected')}
 function saveProject(){
  if(readOnly){flash('Turn off See only to save changes');return}
  const name=prompt('Project folder name','My drawing');if(!name||!name.trim())return;
@@ -1614,19 +1627,29 @@ function openProject(){
  S.draw={items:(ps[n].draw.items||[]).map(cloneItem),links:(ps[n].draw.links||[]).slice()};ensureItemIds(root());hist=[];fit();drawSave();
 }
 async function joinRoom(){
- if(!hasCloud()){flash('Add your Apps Script Web App URL in Settings first');return}
- const code=prompt('Enter a shared room code. Use the same code on every device (letters/numbers/dash/underscore).',roomCode||'team-drawing');
- if(code===null)return;const clean=code.trim().replace(/[^\w-]/g,'').slice(0,24);if(!clean){flash('Room code is required');return}
- updateRoomStatus('Connecting to room…');
+ const code=prompt('Choose a room name. Anyone with this exact name can join; keep it private if needed.',roomCode||'team-drawing');
+ if(code===null)return;const clean=code.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,32);if(!clean){flash('Room name must contain letters, numbers, dash or underscore');return}
+ if(roomPeer)stopRoom();updateRoomStatus('Starting peer-to-peer room…');
  try{
-  const r=await roomCall({action:'room',op:'get',room:clean});
-  if(r.status==='error')throw new Error(r.message||'Room server returned an error');
-  if(r.draw){if(!confirm('A drawing already exists in room '+clean+'. Load and use that shared drawing?')){updateRoomStatus(roomCode?'Connected · '+roomCode:'Not connected');return}S.draw={items:r.draw.items||[],links:r.draw.links||[]};ensureItemIds(root());hist=[];dirty=true;save()}
-  roomCode=clean;roomVer=Number(r.ver)||0;roomPending=!r.draw;roomErrorShown=false;roomLoop();toolbar();
-  if(roomPending)scheduleRoomPush(50);else updateRoomStatus('Connected · version '+roomVer);
-  flash('Live room connected: '+roomCode);
- }catch(e){updateRoomStatus('Not connected');flash('Could not connect to live room: '+(e&&e.message?e.message:'check the Apps Script URL and deployment'))}
+  await loadPeerJS();roomCode=clean;roomOrigin=location.origin;const hostId=roomPeerId(clean);
+  const startAsGuest=()=>{
+   roomRole='guest';roomPeer=new Peer();
+   roomPeer.on('open',()=>{const c=roomPeer.connect(hostId,{reliable:true,serialization:'json'});roomConn=c;attachRoomConnection(c);c.on('open',()=>flash('Joined live room: '+clean))});
+   roomPeer.on('error',e=>{updateRoomStatus('Peer connection error: '+(e.type||e.message||'unknown'));if(!roomErrorShown){flash('Live room connection failed. Make sure the room host is online and internet access is available.');roomErrorShown=true}});
+  };
+  roomRole='host';roomPeer=new Peer(hostId);
+  roomPeer.on('open',id=>{roomRole='host';roomErrorShown=false;roomLoop();updateRoomStatus('Room open · waiting for others');toolbar();flash('You opened live room: '+clean+' — share the room name')});
+  roomPeer.on('connection',conn=>attachRoomConnection(conn));
+  roomPeer.on('error',e=>{
+   if(e.type==='unavailable-id'){
+    try{roomPeer.destroy()}catch(_){}roomPeer=null;startAsGuest();return;
+   }
+   updateRoomStatus('Peer error: '+(e.type||e.message||'unknown'));
+   if(!roomErrorShown){flash('Live room error: '+(e.message||e.type||'check internet access'));roomErrorShown=true}
+  });
+ }catch(e){roomPeer=null;roomCode='';roomRole='';updateRoomStatus('Not connected');flash('Could not start peer room: '+(e.message||e))}
 }
+
 const root=()=>(S.draw=S.draw&&S.draw.items?S.draw:{items:[],links:[]}).items;
 const links=()=>{root();return S.draw.links||(S.draw.links=[])};
 function snap(){root();hist.push(JSON.stringify({items:S.draw.items,links:S.draw.links||[]}));if(hist.length>60)hist.shift()}
@@ -1720,6 +1743,8 @@ function frame(){
     dirty=false;cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,W,H);
     cx.save();cx.translate(cam.x,cam.y);cx.scale(cam.k,cam.k);
     paint(cx,root(),cam.k,1);drawLinks(cx);
+    for(const [pid,preview] of remotePreview){if(preview)paint(cx,[preview],cam.k,.85)}
+    for(const [pid,cur] of remoteCursors){if(cur){cx.save();cx.fillStyle='#2f9e6a';cx.beginPath();cx.arc(cur.x,cur.y,5/cam.k,0,Math.PI*2);cx.fill();cx.font=(12/cam.k)+'px sans-serif';cx.fillText(String(cur.name||'Collaborator').slice(0,24),cur.x+8/cam.k,cur.y-8/cam.k);cx.restore()}}
     if(live){
       if(live.t==='s')paint(cx,[live],cam.k,1);
       else if(live.t==='l'){cx.strokeStyle='#c8962e';cx.lineWidth=2.5/cam.k;cx.beginPath();cx.moveTo(live.x1,live.y1);cx.lineTo(live.x2,live.y2);cx.stroke()}
@@ -1865,7 +1890,7 @@ function toolbar(){
   </div>
   <div class="draw-more" ${moreOpen?'':'hidden'}>
    <button class="chip" data-a="rep">Report</button>
-   <button class="chip" data-a="room">${roomCode?'Room: '+esc(roomCode):'Live room'}</button>
+   <button class="chip" data-a="room">${roomCode?'Room: '+esc(roomCode)+' · '+(roomRole==='host'?'Host':'Joined'):'Live room'}</button>
    <button class="chip ${readOnly?'on':''}" data-a="view">${readOnly?'Exit see-only':'See only'}</button>
    <button class="chip" data-a="new">New drawing</button>
    <button class="chip" data-a="project">Save to project</button>
@@ -1928,6 +1953,7 @@ window.mountDraw=function(){
       const[a,b]=[...P.values()],d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2,c0=pin.cam,nk=cl(c0.k*d/pin.d,.01,80);
       const wx=(pin.mx-c0.x)/c0.k,wy=(pin.my-c0.y)/c0.k;cam.k=nk;cam.x=mx-wx*nk;cam.y=my-wy*nk;dirty=true;return;
     }
+    const [cursorX,cursorY]=s2w(e.clientX,e.clientY);sendLiveCursor(cursorX,cursorY);
     if(!drag)return;
     const dx=e.clientX-drag.lx,dy=e.clientY-drag.ly;
     if(drag.panOnly){cam.x+=dx;cam.y+=dy;drag.lx=e.clientX;drag.ly=e.clientY;dirty=true;return}
@@ -1942,10 +1968,10 @@ window.mountDraw=function(){
     else if(tool==='sel'&&drag.item&&drag.moved){snapOnce();move(drag.item,dx/cam.k,dy/cam.k)}
     else if(tool==='link'&&live){live.x2=x;live.y2=y}
     else if(tool==='sel'||tool==='text'||tool==='link'){cam.x+=dx;cam.y+=dy}
-    dirty=true;
+    dirty=true;sendLivePreview();
   });
   const up=e=>{
-    P.delete(e.pointerId);
+    P.delete(e.pointerId);sendLivePreview();sendLiveCursor(-999999,-999999);
     if(pin){if(P.size<2)pin=null;drag=null;live=null;return}
     if(!drag)return;const d=drag;drag=null;
     if(d.panOnly){dirty=true;return}
@@ -2009,7 +2035,7 @@ window.mountDraw=function(){
           drawSave();dirty=true})}
       }
     }
-    dirty=true;
+    dirty=true;sendLivePreview();
   };
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
 };
