@@ -1546,7 +1546,7 @@ function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('
 function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
 
-/* ===== LIVE ROOM v3: instant handshake + auto-close when host leaves ===== */
+/* ===== LIVE ROOM v4 + CUSTOM PROJECT & CONFIRM MODALS ===== */
 const MQ_LIB=['https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js','https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js'];
 const MQ_BROKERS=[
   'wss://broker.emqx.io:8084/mqtt',
@@ -1554,7 +1554,7 @@ const MQ_BROKERS=[
   'wss://test.mosquitto.org:8081/mqtt'
 ];
 let mqLoading=null,mqLinks=[],mqMe='',mqSeen=new Set(),mqLastPrev=0,mqLastCur=0,mqWaitT=null,mqHelloInt=null,mqRetryT=null,mqGotState=false,mqPendingDraw=null,mqPrevActive=false,mqAnnounced=false;
-let mqHostBeatInt=null,mqHostLastSeen=0,mqPreJoinDraw=null;
+let mqHostBeatInt=null,mqHostLastSeen=0,mqPreJoinBackup=null;
 
 function mqLoad(){
  if(window.mqtt)return Promise.resolve();
@@ -1589,7 +1589,7 @@ function mqSend(sub,obj,opts={qos:0}){
  return true;
 }
 
-/* Wipe retained room data from brokers so nobody can join a dead room later */
+/* Wipe retained room data on brokers so nobody can join after the host leaves */
 function clearRetainedRoom(){
  if(!roomCode)return;
  for(const l of mqLinks){
@@ -1599,22 +1599,47 @@ function clearRetainedRoom(){
  }
 }
 
-/* Triggered on guests when the host leaves or disconnects */
+/* Snapshot & restore joiner's previous workspace so they go right back to where they were */
+function savePreJoinWorkspace(){
+ if(mqPreJoinBackup)return;
+ mqPreJoinBackup={
+  draw:drawState(),
+  cam:{...cam},
+  hist:hist.slice()
+ };
+}
+
+function restorePreJoinWorkspace(){
+ if(mqPreJoinBackup){
+  S.draw={
+   items:(mqPreJoinBackup.draw.items||[]).map(cloneItem),
+   links:(mqPreJoinBackup.draw.links||[]).slice()
+  };
+  cam={...mqPreJoinBackup.cam};
+  hist=mqPreJoinBackup.hist.slice();
+  mqPreJoinBackup=null;
+ }else{
+  S.draw={items:[],links:[]};
+  hist=[];
+  fit();
+ }
+ ensureItemIds(root());
+ dirty=true;
+ save();
+}
+
+/* Triggered on all joiners when the host leaves or disconnects */
 function handleHostLeft(){
  if(!roomCode||roomRole==='host')return;
  const closedRoom=roomCode;
- /* Restore guest's previous canvas (or clear the shared room board) */
- if(mqPreJoinDraw){
-  S.draw={items:(mqPreJoinDraw.items||[]).map(cloneItem),links:(mqPreJoinDraw.links||[]).slice()};
-  mqPreJoinDraw=null;
- }else{
-  S.draw={items:[],links:[]};
- }
- ensureItemIds(root());hist=[];dirty=true;save();
+ const droomModal=document.getElementById('droom');
+ if(droomModal)droomModal.remove();
+ restorePreJoinWorkspace();
  stopRoom(true);
- fit();toolbar();
- updateRoomStatus('Host closed room “'+closedRoom+'”');
- flash('Host left — room “'+closedRoom+'” closed');
+ moreOpen=false;
+ toolbar();
+ updateRoomStatus('Not connected');
+ flash('Host left “'+closedRoom+'” — returned to your drawing');
 }
 
 function mqApply(draw){
@@ -1625,12 +1650,7 @@ function mqApply(draw){
  }
  const first=!mqGotState;
  if(first&&roomRole!=='host'){
-  /* Save a snapshot of the guest's own canvas so we can restore it when the host closes the room */
-  mqPreJoinDraw=drawState();
-  if(root().length||links().length){
-   S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
-   S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:('Before joining '+roomCode).slice(0,80),updatedAt:Date.now(),draw:mqPreJoinDraw});
-  }
+  savePreJoinWorkspace();
  }
  mqGotState=true;
  mqHostLastSeen=Date.now();
@@ -1638,7 +1658,7 @@ function mqApply(draw){
  clearInterval(mqHelloInt);
  S.draw={items:Array.isArray(draw.items)?draw.items:[],links:Array.isArray(draw.links)?draw.links:[]};
  ensureItemIds(root());hist=[];dirty=true;save();
- if(first){fit();flash('Synced with room “'+roomCode+'” ✓')}
+ if(first){fit();flash('Joined room “'+roomCode+'” ✓')}
  mqStatus();toolbar();
 }
 
@@ -1651,7 +1671,7 @@ function pushHostStateNow(){
 
 function mqIn(topic,buf,pkt){
  const raw=buf.toString();
- if(!raw)return; /* Ignore empty retained-clear payloads */
+ if(!raw)return;
  let m;try{m=JSON.parse(raw)}catch(_){return}
  if(!m||m.from===mqMe)return;
  if(m.id){if(mqSeen.has(m.id))return;mqSeen.add(m.id);if(mqSeen.size>400)mqSeen.delete(mqSeen.values().next().value)}
@@ -1662,7 +1682,7 @@ function mqIn(topic,buf,pkt){
   mqApply(m.draw);
  }else if(sub==='e'){
   if(m.type==='close'){
-   /* Host left the room -> immediately kick & clean up joiners */
+   /* Host left the room -> force all joiners to leave and restore their previous work */
    if(roomRole!=='host')handleHostLeft();
    return;
   }
@@ -1712,44 +1732,47 @@ function sendLiveCursor(x,y){
 
 function stopRoom(silent=false){
  clearTimeout(mqWaitT);clearTimeout(mqRetryT);clearInterval(mqHelloInt);clearInterval(mqHostBeatInt);
- /* If the host is leaving, notify all joiners and wipe the retained room state */
+ /* If the host leaves, broadcast 'close' 3x for reliability and wipe retained state */
  if(!silent&&roomCode&&roomRole==='host'){
-  mqSend('e',{type:'close'},{qos:0});
+  for(let i=0;i<3;i++)mqSend('e',{type:'close'},{qos:0});
   clearRetainedRoom();
+ }
+ /* If a joiner manually clicks "Leave room", also return them to where they were before joining */
+ if(!silent&&roomCode&&roomRole==='guest'&&mqPreJoinBackup){
+  restorePreJoinWorkspace();
  }
  const linksToClose=mqLinks.slice();
  mqLinks=[];remotePreview.clear();remoteCursors.clear();
- roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;mqPreJoinDraw=null;dirty=true;
+ roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;mqPreJoinBackup=null;dirty=true;
  if(!silent)updateRoomStatus('Not connected');
- /* Give the close packet 120ms to flush over WebSocket before terminating the socket */
  setTimeout(()=>{
   for(const l of linksToClose){try{l.client.end(true)}catch(_){}}
- },120);
+ },180);
 }
 
-/* Also close the room for joiners if the host closes or refreshes the browser tab */
 addEventListener('pagehide',()=>{
  if(roomCode&&roomRole==='host')stopRoom();
 });
 
 async function startRoom(clean,role){
  if(roomCode)stopRoom(true);
+ if(role!=='host')savePreJoinWorkspace();
  updateRoomStatus('Connecting…');
  try{await mqLoad()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
  roomCode=clean;roomRole=role;mqGotState=(role==='host');mqAnnounced=false;mqSeen.clear();
  mqMe='n'+Math.random().toString(36).slice(2,9);
  mqHostLastSeen=Date.now();
 
- /* Heartbeat timer: Host pings every 4s; Joiners disconnect if Host is silent for >12s */
+ /* Heartbeat: Host pings every 3.5s; Joiners auto-leave if Host disappears for >10s */
  clearInterval(mqHostBeatInt);
  mqHostBeatInt=setInterval(()=>{
   if(!roomCode){clearInterval(mqHostBeatInt);return}
   if(roomRole==='host'){
    mqSend('e',{type:'hb'},{qos:0});
-  }else if(mqGotState&&Date.now()-mqHostLastSeen>12000){
+  }else if(mqGotState&&Date.now()-mqHostLastSeen>10000){
    handleHostLeft();
   }
- },4000);
+ },3500);
 
  mqLinks=MQ_BROKERS.map(url=>{
   const l={url,connected:false,client:null};
@@ -1758,9 +1781,8 @@ async function startRoom(clean,role){
    clean:true,
    reconnectPeriod:2000,
    connectTimeout:9000,
-   keepalive:20
+   keepalive:15
   };
-  /* MQTT Last Will: if Host's tab crashes or loses Wi-Fi, broker automatically tells joiners to close */
   if(role==='host'){
    opts.will={
     topic:mqTop()+'/e',
@@ -1794,6 +1816,7 @@ async function startRoom(clean,role){
       mqWaitT=setTimeout(()=>{
        clearInterval(mqHelloInt);
        if(!mqGotState&&roomCode===clean){
+        restorePreJoinWorkspace();
         stopRoom(true);
         toolbar();
         updateRoomStatus('Room “'+clean+'” is not active');
@@ -1810,48 +1833,132 @@ async function startRoom(clean,role){
   return l;
  });
 }
+
+/* Custom in-app Save Project modal (no browser prompt) */
 function saveProject(){
  if(readOnly){flash('Turn off See only to save changes');return}
- const name=prompt('Project folder name','My drawing');if(!name||!name.trim())return;
- S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
- S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:name.trim().slice(0,80),updatedAt:Date.now(),draw:drawState()});
- drawSave();flash('Saved in project folder');
+ ask('Save project as','My drawing',name=>{
+  if(!name||!name.trim())return;
+  S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
+  S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:name.trim().slice(0,80),updatedAt:Date.now(),draw:drawState()});
+  drawSave();moreOpen=false;toolbar();flash('Saved in Projects ✓');
+ });
 }
+
+/* Custom in-app New Drawing modal (no browser confirm/prompt) */
 function newDrawing(){
  if(readOnly){flash('Turn off See only to edit');return}
- if(!confirm('Start a new drawing?'))return;
- if(root().length||links().length){
-  if(confirm('Save the current drawing in a project folder before starting the new one?')){
-   const name=prompt('Project folder name for the current drawing','Drawing '+new Date().toLocaleDateString());
-   if(name&&name.trim()){S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:name.trim().slice(0,80),updatedAt:Date.now(),draw:drawState()})}
-  }
- }
- S.draw={items:[],links:[]};hist=[];cam={x:W/2,y:H/2,k:1};dirty=true;drawSave();
+ let o=document.getElementById('dnew');if(o)o.remove();
+ const hasContent=root().length||links().length;
+ o=document.createElement('div');o.id='dnew';
+ o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+ o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(350px,100%)">
+  <div class="sh-top" style="margin-bottom:8px"><b style="font-size:18px">Start a new drawing?</b><button class="x" id="dnx">✕</button></div>
+  <div class="hint" style="margin:0 0 12px">${hasContent?'Save your current drawing to Projects before clearing the canvas, or start fresh right away.':'This will clear the canvas and reset your view.'}</div>
+  ${hasContent?`<label style="margin-top:8px">Save current as (optional)</label><input id="dnn" value="Drawing ${new Date().toLocaleDateString()}" autocomplete="off">`:''}
+  <div class="btns" style="margin-top:14px">
+   ${hasContent?'<button class="btn gold small" id="dns">Save &amp; New</button>':''}
+   <button class="btn main small" id="dnc">Start Fresh</button>
+  </div>
+ </div>`;
+ document.body.append(o);
+ const clearCanvas=()=>{
+  S.draw={items:[],links:[]};hist=[];cam={x:W/2,y:H/2,k:1};dirty=true;drawSave();moreOpen=false;toolbar();
+ };
+ o.querySelector('#dnx').onclick=()=>o.remove();
+ o.querySelector('#dnc').onclick=()=>{o.remove();clearCanvas()};
+ const saveBtn=o.querySelector('#dns');
+ if(saveBtn)saveBtn.onclick=()=>{
+  const n=(o.querySelector('#dnn').value||'').trim()||('Drawing '+new Date().toLocaleDateString());
+  S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
+  S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:n.slice(0,80),updatedAt:Date.now(),draw:drawState()});
+  o.remove();clearCanvas();flash('Saved & started new drawing');
+ };
 }
+
+/* Custom in-app Projects window: Open (enter) or Delete any project */
 function openProject(){
  if(readOnly){flash('Turn off See only to open projects');return}
- const ps=Array.isArray(S.drawProjects)?S.drawProjects:[];if(!ps.length){flash('No saved projects yet');return}
- const choice=prompt('Enter project number to open:\n'+ps.map((p,i)=>(i+1)+'. '+p.name).join('\n'));
- const n=Number(choice)-1;if(!Number.isInteger(n)||!ps[n])return;
- if(!confirm('Open “'+ps[n].name+'”? The current drawing will be replaced.'))return;
- S.draw={items:(ps[n].draw.items||[]).map(cloneItem),links:(ps[n].draw.links||[]).slice()};ensureItemIds(root());hist=[];fit();drawSave();
+ let o=document.getElementById('dproj');if(o)o.remove();
+ o=document.createElement('div');o.id='dproj';
+ o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+
+ const renderList=()=>{
+  const ps=Array.isArray(S.drawProjects)?S.drawProjects:[];
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%);max-height:80vh;display:flex;flex-direction:column">
+   <div class="sh-top" style="margin-bottom:10px">
+    <b style="font-size:19px">Saved Projects</b>
+    <button class="x" id="dpx" aria-label="Close">✕</button>
+   </div>
+   <div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 0">
+    ${ps.length?ps.map((p,idx)=>{
+     const cnt=(p.draw&&p.draw.items)?p.draw.items.length:0;
+     const when=p.updatedAt?fmtD(p.updatedAt)+' · '+fmtT(p.updatedAt):'Saved project';
+     return `<div class="glass" style="padding:11px 12px;border-radius:16px;background:rgba(255,255,255,.78);display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0;cursor:pointer" data-enter="${idx}">
+       <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
+       <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(when)} · ${cnt} item${cnt===1?'':'s'}</div>
+      </div>
+      <button class="btn main small" data-enter="${idx}" style="flex:none;padding:8px 13px;font-size:13px;border-radius:12px">Open</button>
+      <button class="btn danger small" data-del="${idx}" title="Delete project" style="flex:none;padding:8px 11px;font-size:13px;border-radius:12px;background:rgba(244,104,127,.12)">✕</button>
+     </div>`;
+    }).join(''):`<div class="empty" style="padding:24px 12px;font-size:14px">No saved projects yet.<br><span style="font-size:12px">Tap <b>Save</b> in the menu to store a drawing here.</span></div>`}
+   </div>
+   <div class="btns" style="margin-top:14px">
+    <button class="btn small" id="dpc">Close</button>
+   </div>
+  </div>`;
+
+  o.querySelector('#dpx').onclick=()=>o.remove();
+  o.querySelector('#dpc').onclick=()=>o.remove();
+  o.querySelectorAll('[data-enter]').forEach(btn=>{
+   btn.onclick=()=>{
+    const i=+btn.dataset.enter,proj=ps[i];if(!proj)return;
+    /* If currently in a live room as a guest, leave the room cleanly before opening the local project */
+    if(roomCode&&roomRole==='guest')stopRoom(true);
+    S.draw={items:(proj.draw.items||[]).map(cloneItem),links:(proj.draw.links||[]).slice()};
+    ensureItemIds(root());hist=[];o.remove();moreOpen=false;fit();drawSave();toolbar();
+    flash('Opened “'+proj.name+'”');
+   };
+  });
+  o.querySelectorAll('[data-del]').forEach(btn=>{
+   btn.onclick=e=>{
+    e.stopPropagation();
+    const i=+btn.dataset.del,proj=ps[i];if(!proj)return;
+    S.drawProjects.splice(i,1);
+    save();
+    renderList();
+    flash('Deleted “'+proj.name+'”');
+   };
+  });
+ };
+
+ renderList();
+ document.body.append(o);
+ o.onclick=e=>{if(e.target===o)o.remove()};
 }
+
 function joinRoom(){
  let o=document.getElementById('droom');if(o)o.remove();
  o=document.createElement('div');o.id='droom';
  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(340px,100%)"><b style="font-size:18px">Live room</b>
- <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name. Works on any network. Use an unusual name — anyone who knows it can join.</div>
+ <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name. When the host leaves, everyone automatically returns to their own drawing.</div>
  <input id="drn" style="margin-top:12px" autocomplete="off" autocapitalize="off" placeholder="room name">
  <div class="btns" style="margin-top:14px"><button class="btn main small" id="drh">Host</button><button class="btn gold small" id="drj">Join</button></div>
  <div class="btns" style="margin-top:8px"><button class="btn small" id="drc">Cancel</button>${roomCode?'<button class="btn danger small" id="drl">Leave room</button>':''}</div></div>`;
  document.body.append(o);
  const i=o.querySelector('#drn');i.value=roomCode||'';
- const go=role=>{const n=i.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,32);if(!n){flash('Type a room name (letters/numbers)');return}o.remove();startRoom(n,role)};
+ const go=role=>{const n=i.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,32);if(!n){flash('Type a room name (letters/numbers)');return}o.remove();moreOpen=false;startRoom(n,role)};
  o.querySelector('#drh').onclick=()=>go('host');
  o.querySelector('#drj').onclick=()=>go('guest');
  o.querySelector('#drc').onclick=()=>o.remove();
- const l=o.querySelector('#drl');if(l)l.onclick=()=>{o.remove();stopRoom();toolbar();flash('Left the room')};
+ const l=o.querySelector('#drl');
+ if(l)l.onclick=()=>{
+  const wasHost=(roomRole==='host');
+  o.remove();stopRoom();moreOpen=false;toolbar();
+  flash(wasHost?'Closed room for everyone':'Left the room');
+ };
  setTimeout(()=>i.focus(),60);
 }
 
