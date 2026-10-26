@@ -282,6 +282,23 @@ a{color:var(--pink)}
 #dtb .draw-more[hidden]{display:none!important}
 #dtb .draw-room-status{grid-column:1/-1;font-size:11.5px;line-height:1.35;color:var(--muted);padding:5px 4px 1px;overflow-wrap:anywhere}
 @media(max-width:430px){#dtb{left:5px;right:5px}#dtb .drawbar{gap:4px;padding:4px}#dtb .chip{padding:8px 9px;font-size:12px}#dtb select[data-draw-tool]{min-width:92px;max-width:108px}#dtb select[data-draw-col]{min-width:82px;max-width:96px}#dtb .sw2{width:20px;height:20px}}
+/* ---- Draw toolbar v2: icon dock ---- */
+#dtb .dpanel{pointer-events:auto;width:max-content;max-width:100%;padding:6px;border:1px solid rgba(255,255,255,.85);border-radius:20px;background:rgba(255,250,243,.96);box-shadow:0 6px 20px rgba(80,40,50,.14);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#dtb .drow{display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none}
+#dtb .drow::-webkit-scrollbar{display:none}
+#dtb .dsub{margin-top:5px;padding-top:5px;border-top:1px solid rgba(160,120,100,.14)}
+#dtb .dsep{flex:none;width:1px;height:26px;margin:0 3px;background:rgba(160,120,100,.22)}
+#dtb .dt{flex:none;border:0;font:inherit;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;min-width:46px;padding:6px 6px 5px;border-radius:13px;cursor:pointer;font-size:10.5px;font-weight:700}
+#dtb .dt.sm{flex-direction:row;gap:5px;min-width:0;padding:7px 10px;font-size:12px}
+#dtb .dt.on{background:linear-gradient(145deg,#ff9aab,var(--pink));color:#fff;box-shadow:0 4px 12px rgba(244,104,127,.35)}
+#dtb .dt svg{display:block}
+#dtb .dcols{display:flex;gap:9px;padding:0 6px;align-items:center}
+#dtb .dcols .sw2{width:26px;height:26px}
+#dtb .dhint{font-size:11px;color:var(--muted);padding:4px 8px 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dtb .draw-more{position:static;margin-top:6px}
+#dtb .draw-more .dt{justify-content:flex-start;background:rgba(255,255,255,.7)}
+#dtb .draw-more .dt.on{background:linear-gradient(145deg,#ff9aab,var(--pink))}
+@media(max-width:430px){#dtb .dsep{display:none}#dtb .dt{min-width:40px;padding:6px 4px 5px}#dtb .dt.sm{padding:7px 9px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -741,7 +758,7 @@ function beep(){
   }catch(e){}
 }
 async function sysNotify(title,body,tag){
-  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  return; /* in-app only: no browser notifications */
   const opts={body,tag,icon:'icon-192.png',badge:'icon-192.png',vibrate:[200,100,200],renotify:true};
   try{const r=await navigator.serviceWorker.ready;await r.showNotification(title,opts)}
   catch(e){try{new Notification(title,opts)}catch(_){}}
@@ -980,10 +997,10 @@ function vSettings(){
   </details>
 
   <details class="glass setrow">
-   <summary><b class="lb">${ic('bell')}Alerts on this phone</b><span class="stb ${np==='granted'?'ok':'no'}">${np==='granted'?'On ✓':'Off'}</span></summary>
+   <summary><b class="lb">${ic('bell')}Alerts</b><span class="stb ok">In-app ✓</span></summary>
    <div class="setwrap">
-     <div class="btns" style="margin-top:0"><button class="btn main small" id="askperm">Enable</button><button class="btn small" id="testn">Test</button></div>
-     <div class="hl" id="notstat">${np==='granted'?'Enabled ✓ — tap Test, then lock your phone.':np==='denied'?'Blocked — allow notifications for Norie in iPhone Settings.':!standalone&&isIOS?'On iPhone: tap Share → Add to Home Screen, open Norie from there, then tap Enable.':'Tap Enable to allow notifications.'}</div>
+     <div class="btns" style="margin-top:0"><button class="btn small" id="testn">Test</button></div>
+     <div class="hl" id="notstat">Reminders show in a small window inside Norie. Telegram and Calendar still alert you when the app is closed.</div>
      <label>Nag me again every</label>
      <select id="nag">${[[0,'Don’t repeat'],[5,'5 minutes'],[10,'10 minutes'],[30,'30 minutes'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${st.nag===v?'selected':''}>${n}</option>`).join('')}</select>
      <div class="grow" style="padding:14px 0 0;min-height:0"><span style="font-size:15px">Play a soft chime</span>${swHTML('snd',st.sound)}</div>
@@ -1038,14 +1055,7 @@ $('#app').addEventListener('click',async e=>{
     try{await Notification.requestPermission()}catch(_){}
     render();return;
   }
-  if(T.id==='testn'){
-    const n=$('#notstat');
-    if(!('Notification' in window)){if(n)n.textContent='Not available here. On iPhone: Share → Add to Home Screen, then open Norie from there.';return}
-    if(Notification.permission!=='granted'){if(n)n.textContent='Notifications are off — tap Enable first.';return}
-    await sysNotify('Norie','Notifications working!','test');beep();
-    if(n)n.textContent='Sent. If you saw nothing, check iPhone Settings → Notifications → Norie.';
-    flash('Test notification sent');return;
-  }
+  if(T.id==='testn'){beep();flash('Norie: notifications working!');return}
   if(T.id==='caltest'){
     const out=$('#calstat');
     if(!hasCloud()){out.textContent='Set up Cloud Sync first (paste your Web App URL).';return}
@@ -1585,9 +1595,18 @@ function attachRoomConnection(conn){
  conn.on('close',()=>{roomPeers.delete(id);remotePreview.delete(id);remoteCursors.delete(id);if(roomConn===conn)roomConn=null;dirty=true;updateRoomStatus(roomRole==='host'?'Room open · waiting for users':'Room connection lost · rejoin the room')});
  conn.on('error',()=>updateRoomStatus('Peer connection issue · retry joining'));
 }
+const PEER_OPT={config:{iceServers:[
+ {urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'},
+ {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+ {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+ {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}]}};
 function loadPeerJS(){
  if(window.Peer)return Promise.resolve();if(peerLoading)return peerLoading;
- peerLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';script.onload=()=>window.Peer?resolve():reject(new Error('PeerJS did not load'));script.onerror=()=>reject(new Error('Could not load peer connection library. Check internet access.'));document.head.appendChild(script)});
+ const urls=['https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'];
+ peerLoading=(async()=>{
+  for(const u of urls){try{await new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)});if(window.Peer)return}catch(_){}}
+  peerLoading=null;throw new Error('Could not load the live-room library. Check internet.');
+ })();
  return peerLoading;
 }
 function roomPeerId(code){let h=2166136261;for(let i=0;i<code.length;i++){h^=code.charCodeAt(i);h=Math.imul(h,16777619)}return 'norie-room-'+(h>>>0).toString(36)+'-'+code.length.toString(36)}
@@ -1626,28 +1645,57 @@ function openProject(){
  if(!confirm('Open “'+ps[n].name+'”? The current drawing will be replaced.'))return;
  S.draw={items:(ps[n].draw.items||[]).map(cloneItem),links:(ps[n].draw.links||[]).slice()};ensureItemIds(root());hist=[];fit();drawSave();
 }
-async function joinRoom(){
- const code=prompt('Choose a room name. Anyone with this exact name can join; keep it private if needed.',roomCode||'team-drawing');
- if(code===null)return;const clean=code.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,32);if(!clean){flash('Room name must contain letters, numbers, dash or underscore');return}
- if(roomPeer)stopRoom();updateRoomStatus('Starting peer-to-peer room…');
- try{
-  await loadPeerJS();roomCode=clean;roomOrigin=location.origin;const hostId=roomPeerId(clean);
-  const startAsGuest=()=>{
-   roomRole='guest';roomPeer=new Peer();
-   roomPeer.on('open',()=>{const c=roomPeer.connect(hostId,{reliable:true,serialization:'json'});roomConn=c;attachRoomConnection(c);c.on('open',()=>flash('Joined live room: '+clean))});
-   roomPeer.on('error',e=>{updateRoomStatus('Peer connection error: '+(e.type||e.message||'unknown'));if(!roomErrorShown){flash('Live room connection failed. Make sure the room host is online and internet access is available.');roomErrorShown=true}});
-  };
-  roomRole='host';roomPeer=new Peer(hostId);
-  roomPeer.on('open',id=>{roomRole='host';roomErrorShown=false;roomLoop();updateRoomStatus('Room open · waiting for others');toolbar();flash('You opened live room: '+clean+' — share the room name')});
-  roomPeer.on('connection',conn=>attachRoomConnection(conn));
-  roomPeer.on('error',e=>{
-   if(e.type==='unavailable-id'){
-    try{roomPeer.destroy()}catch(_){}roomPeer=null;startAsGuest();return;
-   }
-   updateRoomStatus('Peer error: '+(e.type||e.message||'unknown'));
-   if(!roomErrorShown){flash('Live room error: '+(e.message||e.type||'check internet access'));roomErrorShown=true}
+async function startRoom(clean,role){
+ if(roomPeer||roomCode)stopRoom();
+ updateRoomStatus('Connecting…');
+ try{await loadPeerJS()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
+ roomCode=clean;roomRole=role;roomErrorShown=false;
+ const hostId=roomPeerId(clean),fail=m=>{updateRoomStatus(m);flash(m)};
+ if(role==='host'){
+  const p=roomPeer=new Peer(hostId,PEER_OPT);
+  p.on('open',()=>{updateRoomStatus('Room open · waiting for others');toolbar();flash('Room “'+clean+'” is open — others tap Join')});
+  p.on('connection',c=>attachRoomConnection(c));
+  p.on('disconnected',()=>{try{p.reconnect()}catch(_){}});
+  p.on('error',e=>{
+   if(e.type==='unavailable-id'){stopRoom();fail('Room name already in use (or still closing). Wait 1 min or pick another name.');toolbar();return}
+   if(['network','server-error','socket-error'].includes(e.type)){updateRoomStatus('Server issue · retrying…');return}
+   fail('Room error: '+(e.type||e.message));
   });
- }catch(e){roomPeer=null;roomCode='';roomRole='';updateRoomStatus('Not connected');flash('Could not start peer room: '+(e.message||e))}
+ }else{
+  const p=roomPeer=new Peer(PEER_OPT);let tries=0,done=false,t=0;
+  const retry=()=>{if(tries>=3){stopRoom();fail('Could not reach the host. Host must tap Host first, same room name, Norie open.');toolbar();return}connect()};
+  const connect=()=>{
+   if(done||roomPeer!==p)return;
+   tries++;updateRoomStatus('Joining “'+clean+'”… ('+tries+')');
+   const c=p.connect(hostId,{reliable:true});roomConn=c;attachRoomConnection(c);
+   t=setTimeout(()=>{if(!c.open&&!done&&roomPeer===p){try{c.close()}catch(_){}roomPeers.delete(hostId);retry()}},9000);
+   c.on('open',()=>{done=true;clearTimeout(t);toolbar();flash('Joined room “'+clean+'”')});
+  };
+  p.on('open',connect);
+  p.on('disconnected',()=>{try{p.reconnect()}catch(_){}});
+  p.on('error',e=>{
+   if(e.type==='peer-unavailable'){clearTimeout(t);roomPeers.delete(hostId);setTimeout(()=>{if(roomPeer===p&&!done)retry()},1500);return}
+   fail('Room error: '+(e.type||e.message));
+  });
+ }
+}
+function joinRoom(){
+ let o=document.getElementById('droom');if(o)o.remove();
+ o=document.createElement('div');o.id='droom';
+ o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+ o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(340px,100%)"><b style="font-size:18px">Live room</b>
+ <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name.</div>
+ <input id="drn" style="margin-top:12px" autocomplete="off" autocapitalize="off" placeholder="room name">
+ <div class="btns" style="margin-top:14px"><button class="btn main small" id="drh">Host</button><button class="btn gold small" id="drj">Join</button></div>
+ <div class="btns" style="margin-top:8px"><button class="btn small" id="drc">Cancel</button>${roomCode?'<button class="btn danger small" id="drl">Leave room</button>':''}</div></div>`;
+ document.body.append(o);
+ const i=o.querySelector('#drn');i.value=roomCode||'';
+ const go=role=>{const n=i.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,32);if(!n){flash('Type a room name (letters/numbers)');return}o.remove();startRoom(n,role)};
+ o.querySelector('#drh').onclick=()=>go('host');
+ o.querySelector('#drj').onclick=()=>go('guest');
+ o.querySelector('#drc').onclick=()=>o.remove();
+ const l=o.querySelector('#drl');if(l)l.onclick=()=>{o.remove();stopRoom();toolbar();flash('Left the room')};
+ setTimeout(()=>i.focus(),60);
 }
 
 const root=()=>(S.draw=S.draw&&S.draw.items?S.draw:{items:[],links:[]}).items;
@@ -1879,24 +1927,35 @@ function report(){
   gs.forEach(g=>box.append(repNode(g,0)));
   document.body.append(o);o.querySelector('#drx').onclick=()=>o.remove();
 }
+Object.assign(ICONS,{
+ type:_p('M4 7V4h16v3','M9 20h6','M12 4v16'),
+ move:_p('M5 9l-3 3 3 3','M9 5l3-3 3 3','M15 19l-3 3-3-3','M19 9l3 3-3 3','M2 12h20','M12 2v20'),
+ box:'<rect x="3" y="3" width="18" height="18" rx="3" stroke-dasharray="4 3"/>',
+ image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/>'+_p('m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21'),
+ edit:_p('M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7','M18.4 2.6a1.6 1.6 0 0 1 3 3L12 15l-4 1 1-4Z'),
+ erase:_p('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21','M22 21H7','m5 11 9 9'),
+ link:_p('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71','M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'),
+ undo:_p('M3 7v6h6','M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13'),
+ fit:_p('M8 3H5a2 2 0 0 0-2 2v3','M21 8V5a2 2 0 0 0-2-2h-3','M3 16v3a2 2 0 0 0 2 2h3','M16 21h3a2 2 0 0 0 2-2v-3'),
+ more:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+ users:_p('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2','M22 21v-2a4 4 0 0 0-3-3.87')+'<circle cx="9" cy="7" r="4"/>',
+ eye:_p('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z')+'<circle cx="12" cy="12" r="3"/>'
+});
+const GROUPS=[[['pen','Pen','pen'],['text','Text','type'],['image','Image','image']],[['sel','Move','move'],['group','Box','box'],['link','Link','link']],[['edit','Edit','edit'],['erase','Erase','erase']]];
+const HINTS={pen:'Draw with your finger',text:'Tap to type or paste text',image:'Tap to place an image',sel:'Drag items · tap a box to open it · corner grip resizes',group:'Drag a rectangle around drawings to make a named box',link:'Drag from one box to another',edit:'Tap text, image or box to edit it',erase:'Drag over strokes to erase'};
 function toolbar(){
  const t=document.getElementById('dtb');if(!t)return;
- const options=TOOLS.map(([k,n])=>`<option value="${k}" ${tool===k?'selected':''}>${n}</option>`).join('');
- t.innerHTML=`<div class="drawbar">
-   <select data-draw-tool aria-label="Drawing tool">${options}</select>
-   <select data-draw-col aria-label="Drawing color">${COLS.map((c,i)=>`<option value="${c}" ${col===c?'selected':''}>${['Dark','Pink','Gold','Green'][i]} color</option>`).join('')}</select>
-   <button class="chip" data-a="undo">Undo</button><button class="chip" data-a="fit">Fit</button>
-   <button class="chip" data-a="more" aria-expanded="${moreOpen?'true':'false'}">More ${moreOpen?'▴':'⋯'}</button>
-  </div>
-  <div class="draw-more" ${moreOpen?'':'hidden'}>
-   <button class="chip" data-a="rep">Report</button>
-   <button class="chip" data-a="room">${roomCode?'Room: '+esc(roomCode)+' · '+(roomRole==='host'?'Host':'Joined'):'Live room'}</button>
-   <button class="chip ${readOnly?'on':''}" data-a="view">${readOnly?'Exit see-only':'See only'}</button>
-   <button class="chip" data-a="new">New drawing</button>
-   <button class="chip" data-a="project">Save to project</button>
-   <button class="chip" data-a="openproject">Projects</button>
-   <div id="drawRoomStatus" class="draw-room-status" role="status">${esc(roomStatus)}</div>
-  </div>`;
+ const tb=([k,n,i])=>`<button class="dt ${tool===k?'on':''}" data-tool="${k}">${ic(i,19)}<span>${n}</span></button>`;
+ const ab=(a,n,i,on)=>`<button class="dt sm ${on?'on':''}" data-a="${a}">${ic(i,17)}<span>${n}</span></button>`;
+ t.innerHTML=`<div class="dpanel">
+  <div class="drow">${GROUPS.map(g=>g.map(tb).join('')).join('<i class="dsep"></i>')}</div>
+  <div class="drow dsub"><div class="dcols">${COLS.map(c=>`<button class="sw2 ${col===c?'on':''}" data-col="${c}" style="background:${c}" aria-label="Color"></button>`).join('')}</div><i class="dsep"></i>${ab('undo','Undo','undo')}${ab('fit','Fit','fit')}${ab('more','More','more',moreOpen)}</div>
+  <div class="dhint">${HINTS[tool]||''}${readOnly?' · See-only is ON':''}</div>
+ </div>
+ <div class="draw-more" ${moreOpen?'':'hidden'}>
+  ${ab('rep','Report','list')}${ab('room',roomCode?esc(roomCode):'Live room','users',!!roomCode)}${ab('view',readOnly?'Exit see-only':'See only','eye',readOnly)}${ab('new','New','plus')}${ab('project','Save','save')}${ab('openproject','Projects','folder')}
+  <div id="drawRoomStatus" class="draw-room-status" role="status">${esc(roomStatus)}</div>
+ </div>`;
 }
 window.mountDraw=function(){
   const w=document.getElementById('dwrap');if(!w)return;
@@ -1920,7 +1979,8 @@ window.mountDraw=function(){
   };
   drawToolbar.onclick=e=>{
     const b=e.target.closest('button');if(!b)return;
-    if(b.dataset.col){if(readOnly){flash('Turn off See only to edit');return}col=b.dataset.col;tool='pen';moreOpen=false;toolbar();return}
+    if(b.dataset.tool){if(readOnly){flash('Turn off See only to edit');return}tool=b.dataset.tool;moreOpen=false;toolbar();return}
+    if(b.dataset.col){if(readOnly){flash('Turn off See only to edit');return}col=b.dataset.col;if(tool!=='text')tool='pen';moreOpen=false;toolbar();return}
     if(b.dataset.a==='more'){moreOpen=!moreOpen;toolbar();return}
     if(b.dataset.a==='undo'){if(readOnly){flash('Turn off See only to edit');return}undo()}
     else if(b.dataset.a==='fit')fit();
