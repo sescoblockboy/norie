@@ -1546,10 +1546,15 @@ function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('
 function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
 
-/* ===== LIVE ROOM v2: relay through public MQTT brokers (works on any network, no accounts, no Apps Script) ===== */
+/* ===== LIVE ROOM v2 (FIXED): instant handshake + retry polling ===== */
 const MQ_LIB=['https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js','https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js'];
-const MQ_BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
-let mqLoading=null,mqLinks=[],mqMe='',mqSeen=new Set(),mqLastPrev=0,mqLastCur=0,mqWaitT=null,mqRetryT=null,mqGotState=false,mqPendingDraw=null,mqPrevActive=false,mqAnnounced=false;
+const MQ_BROKERS=[
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt'
+];
+let mqLoading=null,mqLinks=[],mqMe='',mqSeen=new Set(),mqLastPrev=0,mqLastCur=0,mqWaitT=null,mqHelloInt=null,mqRetryT=null,mqGotState=false,mqPendingDraw=null,mqPrevActive=false,mqAnnounced=false;
+
 function mqLoad(){
  if(window.mqtt)return Promise.resolve();
  if(mqLoading)return mqLoading;
@@ -1561,21 +1566,30 @@ function mqLoad(){
  })();
  return mqLoading;
 }
+
 const mqTop=()=>'norie/v1/'+roomCode;
+
 function mqStatus(){
  if(!roomCode)return;
  const n=mqLinks.filter(l=>l.connected).length;
  if(!n){updateRoomStatus('Connecting to relay…');return}
- updateRoomStatus(roomRole==='host'?'Live · hosting “'+roomCode+'”':mqGotState?'Live · joined “'+roomCode+'”':'Joined · waiting for the host’s drawing…');
+ updateRoomStatus(roomRole==='host'?'Live · hosting “'+roomCode+'”':mqGotState?'Live · joined “'+roomCode+'”':'Joined · syncing with host…');
 }
-function mqSend(sub,obj,opts){
+
+function mqSend(sub,obj,opts={qos:0}){
  if(!mqLinks.some(l=>l.connected))return false;
- const msg=JSON.stringify(Object.assign({id:mqMe+Date.now().toString(36)+Math.random().toString(36).slice(2,5),from:mqMe},obj));
+ const msg=JSON.stringify(Object.assign({id:mqMe+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),from:mqMe},obj));
  if(msg.length>900000){updateRoomStatus('Drawing too big to share — remove some images');return true}
- for(const l of mqLinks){if(l.connected){try{l.client.publish(mqTop()+'/'+sub,msg,opts)}catch(_){}}}
+ for(const l of mqLinks){
+  if(l.connected){
+   try{l.client.publish(mqTop()+'/'+sub,msg,opts)}catch(_){}
+  }
+ }
  return true;
 }
+
 function mqApply(draw){
+ if(!draw||typeof draw!=='object')return;
  if(drag||live){ /* never swap the drawing under someone's finger */
   mqPendingDraw=draw;clearTimeout(mqRetryT);
   mqRetryT=setTimeout(()=>{const d=mqPendingDraw;mqPendingDraw=null;if(d)mqApply(d)},300);return;
@@ -1585,33 +1599,58 @@ function mqApply(draw){
   S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
   S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:('Before joining '+roomCode).slice(0,80),updatedAt:Date.now(),draw:drawState()});
  }
- mqGotState=true;clearTimeout(mqWaitT);
+ mqGotState=true;
+ clearTimeout(mqWaitT);
+ clearInterval(mqHelloInt);
  S.draw={items:Array.isArray(draw.items)?draw.items:[],links:Array.isArray(draw.links)?draw.links:[]};
  ensureItemIds(root());hist=[];dirty=true;save();
- if(first)fit();
+ if(first){fit();flash('Synced with room “'+roomCode+'” ✓')}
  mqStatus();toolbar();
 }
+
+function pushHostStateNow(){
+ if(!roomCode)return;
+ const state=drawState();
+ /* Send on BOTH /e (fast unretained QoS 0) and /s (retained QoS 0) so public brokers never drop it */
+ mqSend('e',{type:'sync',draw:state},{qos:0});
+ mqSend('s',{draw:state},{qos:0,retain:true});
+}
+
 function mqIn(topic,buf,pkt){
  let m;try{m=JSON.parse(buf.toString())}catch(_){return}
  if(!m||m.from===mqMe)return;
- if(m.id){if(mqSeen.has(m.id))return;mqSeen.add(m.id);if(mqSeen.size>300)mqSeen.delete(mqSeen.values().next().value)}
+ if(m.id){if(mqSeen.has(m.id))return;mqSeen.add(m.id);if(mqSeen.size>400)mqSeen.delete(mqSeen.values().next().value)}
  const sub=topic.slice(topic.lastIndexOf('/')+1);
  if(sub==='s'&&m.draw){
-  /* saved copy on the relay: only a joiner who has nothing yet uses it */
   if(pkt&&pkt.retain&&(roomRole==='host'||mqGotState))return;
   mqApply(m.draw);
  }else if(sub==='e'){
-  if(m.type==='preview'){if(m.item&&m.item.t==='s')remotePreview.set(m.from,m.item);else remotePreview.delete(m.from);dirty=true}
+  // Change this inside mqIn:
+if(m.type==='sync'&&m.draw){
+  if(roomRole==='host')return; // <-- REMOVE this line so the host also receives guest strokes!
+  mqApply(m.draw);
+}
+  else if(m.type==='preview'){if(m.item&&m.item.t==='s')remotePreview.set(m.from,m.item);else remotePreview.delete(m.from);dirty=true}
   else if(m.type==='cursor'){if(m.cursor&&m.cursor.x!==-999999)remoteCursors.set(m.from,m.cursor);else remoteCursors.delete(m.from);dirty=true}
-  else if(m.type==='hello'){roomPending=true;scheduleRoomPush(200)}
+  else if(m.type==='hello'){
+   /* Anyone who already has the room state (host or synced peer) answers immediately, even if in readOnly mode */
+   if(roomRole==='host'||mqGotState){
+    pushHostStateNow();
+   }
+  }
  }
 }
+
 async function pushRoom(){
  if(!roomCode||readOnly||!roomPending)return;
- if(roomRole!=='host'&&!mqGotState)return; /* a joiner must receive the room's drawing first, never overwrite it */
+ if(roomRole!=='host'&&!mqGotState)return;
  roomPending=false;
- if(!mqSend('s',{draw:drawState()},{qos:1,retain:true}))roomPending=true; /* retry when connected */
+ const state=drawState();
+ const ok1=mqSend('e',{type:'sync',draw:state},{qos:0});
+ const ok2=mqSend('s',{draw:state},{qos:0,retain:true});
+ if(!ok1&&!ok2)roomPending=true;
 }
+
 function sendLivePreview(){
  if(!roomCode||!mqLinks.length)return;
  const item=(live&&live.t==='s')?cloneItem(live):null;
@@ -1620,38 +1659,69 @@ function sendLivePreview(){
  mqLastPrev=n;mqPrevActive=!!item;
  mqSend('e',{type:'preview',item},{qos:0});
 }
+
 function sendLiveCursor(x,y){
  if(!roomCode||!mqLinks.length)return;
  const n=Date.now();if(x!==-999999&&n-mqLastCur<90)return;mqLastCur=n;
  mqSend('e',{type:'cursor',cursor:{x,y,name:(S.settings&&S.settings.name)||'Collaborator'}},{qos:0});
 }
+
 function stopRoom(){
- clearTimeout(mqWaitT);clearTimeout(mqRetryT);
+ clearTimeout(mqWaitT);clearTimeout(mqRetryT);clearInterval(mqHelloInt);
  for(const l of mqLinks){try{l.client.end(true)}catch(_){}}
  mqLinks=[];remotePreview.clear();remoteCursors.clear();
  roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;dirty=true;updateRoomStatus('Not connected');
 }
+
 async function startRoom(clean,role){
  if(roomCode)stopRoom();
  updateRoomStatus('Connecting…');
  try{await mqLoad()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
- roomCode=clean;roomRole=role;mqGotState=false;mqAnnounced=false;mqSeen.clear();
+ roomCode=clean;roomRole=role;mqGotState=(role==='host');mqAnnounced=false;mqSeen.clear();
  mqMe='n'+Math.random().toString(36).slice(2,9);
+
  mqLinks=MQ_BROKERS.map(url=>{
   const l={url,connected:false,client:null};
-  const c=l.client=mqtt.connect(url,{clientId:'norie_'+mqMe+'_'+Math.random().toString(36).slice(2,5),clean:true,reconnectPeriod:2500,connectTimeout:9000,keepalive:30});
+  const c=l.client=mqtt.connect(url,{
+   clientId:'norie_'+mqMe+'_'+Math.random().toString(36).slice(2,6),
+   clean:true,
+   reconnectPeriod:2000,
+   connectTimeout:9000,
+   keepalive:25
+  });
   c.on('connect',()=>{
    if(roomCode!==clean)return;
-   l.connected=true;
-   c.subscribe([mqTop()+'/s',mqTop()+'/e'],{qos:1});
-   mqStatus();
-   if(role==='host'){roomPending=true;scheduleRoomPush(400)}
-   else if(!mqGotState)setTimeout(()=>{if(!mqGotState)mqSend('e',{type:'hello'},{qos:0})},700);
-   if(!mqAnnounced){
-    mqAnnounced=true;toolbar();
-    flash(role==='host'?'Room “'+clean+'” is live — others tap Join':'Joining room “'+clean+'”…');
-    if(role!=='host'){clearTimeout(mqWaitT);mqWaitT=setTimeout(()=>{if(!mqGotState&&roomCode===clean){updateRoomStatus('Nothing in this room yet — ask the host to tap Host first');flash('No host found for “'+clean+'”')}},9000)}
-   }
+   /* Wait until subscription is confirmed by the broker before sending/requesting state */
+   c.subscribe([mqTop()+'/s',mqTop()+'/e'],{qos:0},err=>{
+    if(err||roomCode!==clean)return;
+    l.connected=true;
+    mqStatus();
+    if(role==='host'){
+     pushHostStateNow();
+    }else if(!mqGotState){
+     mqSend('e',{type:'hello'},{qos:0});
+    }
+    if(!mqAnnounced){
+     mqAnnounced=true;toolbar();
+     flash(role==='host'?'Room “'+clean+'” is live — others tap Join':'Joining room “'+clean+'”…');
+     if(role!=='host'){
+      /* Keep asking every 1.2s until the host replies */
+      clearInterval(mqHelloInt);
+      mqHelloInt=setInterval(()=>{
+       if(mqGotState||roomCode!==clean){clearInterval(mqHelloInt);return}
+       mqSend('e',{type:'hello'},{qos:0});
+      },1200);
+      clearTimeout(mqWaitT);
+      mqWaitT=setTimeout(()=>{
+       clearInterval(mqHelloInt);
+       if(!mqGotState&&roomCode===clean){
+        updateRoomStatus('No response yet — make sure Host is open with the exact same room name');
+        flash('Could not reach host for “'+clean+'”');
+       }
+      },15000);
+     }
+    }
+   });
   });
   c.on('message',(t,p,pkt)=>{if(roomCode===clean)mqIn(t,p,pkt)});
   c.on('close',()=>{l.connected=false;mqStatus()});
