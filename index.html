@@ -1546,7 +1546,7 @@ function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('
 function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
 
-/* ===== LIVE ROOM v2 (FIXED): instant handshake + retry polling ===== */
+/* ===== LIVE ROOM v3: instant handshake + auto-close when host leaves ===== */
 const MQ_LIB=['https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js','https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js'];
 const MQ_BROKERS=[
   'wss://broker.emqx.io:8084/mqtt',
@@ -1554,6 +1554,7 @@ const MQ_BROKERS=[
   'wss://test.mosquitto.org:8081/mqtt'
 ];
 let mqLoading=null,mqLinks=[],mqMe='',mqSeen=new Set(),mqLastPrev=0,mqLastCur=0,mqWaitT=null,mqHelloInt=null,mqRetryT=null,mqGotState=false,mqPendingDraw=null,mqPrevActive=false,mqAnnounced=false;
+let mqHostBeatInt=null,mqHostLastSeen=0,mqPreJoinDraw=null;
 
 function mqLoad(){
  if(window.mqtt)return Promise.resolve();
@@ -1588,6 +1589,34 @@ function mqSend(sub,obj,opts={qos:0}){
  return true;
 }
 
+/* Wipe retained room data from brokers so nobody can join a dead room later */
+function clearRetainedRoom(){
+ if(!roomCode)return;
+ for(const l of mqLinks){
+  if(l.connected){
+   try{l.client.publish(mqTop()+'/s','',{qos:0,retain:true})}catch(_){}
+  }
+ }
+}
+
+/* Triggered on guests when the host leaves or disconnects */
+function handleHostLeft(){
+ if(!roomCode||roomRole==='host')return;
+ const closedRoom=roomCode;
+ /* Restore guest's previous canvas (or clear the shared room board) */
+ if(mqPreJoinDraw){
+  S.draw={items:(mqPreJoinDraw.items||[]).map(cloneItem),links:(mqPreJoinDraw.links||[]).slice()};
+  mqPreJoinDraw=null;
+ }else{
+  S.draw={items:[],links:[]};
+ }
+ ensureItemIds(root());hist=[];dirty=true;save();
+ stopRoom(true);
+ fit();toolbar();
+ updateRoomStatus('Host closed room “'+closedRoom+'”');
+ flash('Host left — room “'+closedRoom+'” closed');
+}
+
 function mqApply(draw){
  if(!draw||typeof draw!=='object')return;
  if(drag||live){ /* never swap the drawing under someone's finger */
@@ -1595,11 +1624,16 @@ function mqApply(draw){
   mqRetryT=setTimeout(()=>{const d=mqPendingDraw;mqPendingDraw=null;if(d)mqApply(d)},300);return;
  }
  const first=!mqGotState;
- if(first&&roomRole!=='host'&&(root().length||links().length)){ /* safety copy of what you had before joining */
-  S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
-  S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:('Before joining '+roomCode).slice(0,80),updatedAt:Date.now(),draw:drawState()});
+ if(first&&roomRole!=='host'){
+  /* Save a snapshot of the guest's own canvas so we can restore it when the host closes the room */
+  mqPreJoinDraw=drawState();
+  if(root().length||links().length){
+   S.drawProjects=Array.isArray(S.drawProjects)?S.drawProjects:[];
+   S.drawProjects.push({id:'dp_'+Date.now().toString(36),name:('Before joining '+roomCode).slice(0,80),updatedAt:Date.now(),draw:mqPreJoinDraw});
+  }
  }
  mqGotState=true;
+ mqHostLastSeen=Date.now();
  clearTimeout(mqWaitT);
  clearInterval(mqHelloInt);
  S.draw={items:Array.isArray(draw.items)?draw.items:[],links:Array.isArray(draw.links)?draw.links:[]};
@@ -1611,30 +1645,40 @@ function mqApply(draw){
 function pushHostStateNow(){
  if(!roomCode)return;
  const state=drawState();
- /* Send on BOTH /e (fast unretained QoS 0) and /s (retained QoS 0) so public brokers never drop it */
- mqSend('e',{type:'sync',draw:state},{qos:0});
- mqSend('s',{draw:state},{qos:0,retain:true});
+ mqSend('e',{type:'sync',draw:state,role:roomRole},{qos:0});
+ if(roomRole==='host')mqSend('s',{draw:state,host:mqMe},{qos:0,retain:true});
 }
 
 function mqIn(topic,buf,pkt){
- let m;try{m=JSON.parse(buf.toString())}catch(_){return}
+ const raw=buf.toString();
+ if(!raw)return; /* Ignore empty retained-clear payloads */
+ let m;try{m=JSON.parse(raw)}catch(_){return}
  if(!m||m.from===mqMe)return;
  if(m.id){if(mqSeen.has(m.id))return;mqSeen.add(m.id);if(mqSeen.size>400)mqSeen.delete(mqSeen.values().next().value)}
  const sub=topic.slice(topic.lastIndexOf('/')+1);
  if(sub==='s'&&m.draw){
   if(pkt&&pkt.retain&&(roomRole==='host'||mqGotState))return;
+  mqHostLastSeen=Date.now();
   mqApply(m.draw);
  }else if(sub==='e'){
-  // Change this inside mqIn:
-if(m.type==='sync'&&m.draw){
-  if(roomRole==='host')return; // <-- REMOVE this line so the host also receives guest strokes!
-  mqApply(m.draw);
-}
+  if(m.type==='close'){
+   /* Host left the room -> immediately kick & clean up joiners */
+   if(roomRole!=='host')handleHostLeft();
+   return;
+  }
+  if(m.type==='hb'){
+   if(roomRole!=='host')mqHostLastSeen=Date.now();
+   return;
+  }
+  if(m.type==='sync'&&m.draw){
+   if(m.role==='host')mqHostLastSeen=Date.now();
+   mqApply(m.draw);
+  }
   else if(m.type==='preview'){if(m.item&&m.item.t==='s')remotePreview.set(m.from,m.item);else remotePreview.delete(m.from);dirty=true}
   else if(m.type==='cursor'){if(m.cursor&&m.cursor.x!==-999999)remoteCursors.set(m.from,m.cursor);else remoteCursors.delete(m.from);dirty=true}
   else if(m.type==='hello'){
-   /* Anyone who already has the room state (host or synced peer) answers immediately, even if in readOnly mode */
-   if(roomRole==='host'||mqGotState){
+   if(roomRole==='host'){
+    mqHostLastSeen=Date.now();
     pushHostStateNow();
    }
   }
@@ -1646,8 +1690,8 @@ async function pushRoom(){
  if(roomRole!=='host'&&!mqGotState)return;
  roomPending=false;
  const state=drawState();
- const ok1=mqSend('e',{type:'sync',draw:state},{qos:0});
- const ok2=mqSend('s',{draw:state},{qos:0,retain:true});
+ const ok1=mqSend('e',{type:'sync',draw:state,role:roomRole},{qos:0});
+ const ok2=(roomRole==='host')?mqSend('s',{draw:state,host:mqMe},{qos:0,retain:true}):true;
  if(!ok1&&!ok2)roomPending=true;
 }
 
@@ -1666,32 +1710,68 @@ function sendLiveCursor(x,y){
  mqSend('e',{type:'cursor',cursor:{x,y,name:(S.settings&&S.settings.name)||'Collaborator'}},{qos:0});
 }
 
-function stopRoom(){
- clearTimeout(mqWaitT);clearTimeout(mqRetryT);clearInterval(mqHelloInt);
- for(const l of mqLinks){try{l.client.end(true)}catch(_){}}
+function stopRoom(silent=false){
+ clearTimeout(mqWaitT);clearTimeout(mqRetryT);clearInterval(mqHelloInt);clearInterval(mqHostBeatInt);
+ /* If the host is leaving, notify all joiners and wipe the retained room state */
+ if(!silent&&roomCode&&roomRole==='host'){
+  mqSend('e',{type:'close'},{qos:0});
+  clearRetainedRoom();
+ }
+ const linksToClose=mqLinks.slice();
  mqLinks=[];remotePreview.clear();remoteCursors.clear();
- roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;dirty=true;updateRoomStatus('Not connected');
+ roomRole='';roomCode='';mqGotState=false;mqPrevActive=false;mqPreJoinDraw=null;dirty=true;
+ if(!silent)updateRoomStatus('Not connected');
+ /* Give the close packet 120ms to flush over WebSocket before terminating the socket */
+ setTimeout(()=>{
+  for(const l of linksToClose){try{l.client.end(true)}catch(_){}}
+ },120);
 }
 
+/* Also close the room for joiners if the host closes or refreshes the browser tab */
+addEventListener('pagehide',()=>{
+ if(roomCode&&roomRole==='host')stopRoom();
+});
+
 async function startRoom(clean,role){
- if(roomCode)stopRoom();
+ if(roomCode)stopRoom(true);
  updateRoomStatus('Connecting…');
  try{await mqLoad()}catch(e){updateRoomStatus('Not connected');flash(e.message);return}
  roomCode=clean;roomRole=role;mqGotState=(role==='host');mqAnnounced=false;mqSeen.clear();
  mqMe='n'+Math.random().toString(36).slice(2,9);
+ mqHostLastSeen=Date.now();
+
+ /* Heartbeat timer: Host pings every 4s; Joiners disconnect if Host is silent for >12s */
+ clearInterval(mqHostBeatInt);
+ mqHostBeatInt=setInterval(()=>{
+  if(!roomCode){clearInterval(mqHostBeatInt);return}
+  if(roomRole==='host'){
+   mqSend('e',{type:'hb'},{qos:0});
+  }else if(mqGotState&&Date.now()-mqHostLastSeen>12000){
+   handleHostLeft();
+  }
+ },4000);
 
  mqLinks=MQ_BROKERS.map(url=>{
   const l={url,connected:false,client:null};
-  const c=l.client=mqtt.connect(url,{
+  const opts={
    clientId:'norie_'+mqMe+'_'+Math.random().toString(36).slice(2,6),
    clean:true,
    reconnectPeriod:2000,
    connectTimeout:9000,
-   keepalive:25
-  });
+   keepalive:20
+  };
+  /* MQTT Last Will: if Host's tab crashes or loses Wi-Fi, broker automatically tells joiners to close */
+  if(role==='host'){
+   opts.will={
+    topic:mqTop()+'/e',
+    payload:JSON.stringify({id:'will_'+mqMe+'_'+Date.now(),from:mqMe,type:'close'}),
+    qos:0,
+    retain:false
+   };
+  }
+  const c=l.client=mqtt.connect(url,opts);
   c.on('connect',()=>{
    if(roomCode!==clean)return;
-   /* Wait until subscription is confirmed by the broker before sending/requesting state */
    c.subscribe([mqTop()+'/s',mqTop()+'/e'],{qos:0},err=>{
     if(err||roomCode!==clean)return;
     l.connected=true;
@@ -1705,7 +1785,6 @@ async function startRoom(clean,role){
      mqAnnounced=true;toolbar();
      flash(role==='host'?'Room “'+clean+'” is live — others tap Join':'Joining room “'+clean+'”…');
      if(role!=='host'){
-      /* Keep asking every 1.2s until the host replies */
       clearInterval(mqHelloInt);
       mqHelloInt=setInterval(()=>{
        if(mqGotState||roomCode!==clean){clearInterval(mqHelloInt);return}
@@ -1715,10 +1794,12 @@ async function startRoom(clean,role){
       mqWaitT=setTimeout(()=>{
        clearInterval(mqHelloInt);
        if(!mqGotState&&roomCode===clean){
-        updateRoomStatus('No response yet — make sure Host is open with the exact same room name');
-        flash('Could not reach host for “'+clean+'”');
+        stopRoom(true);
+        toolbar();
+        updateRoomStatus('Room “'+clean+'” is not active');
+        flash('No active host found for “'+clean+'”');
        }
-      },15000);
+      },12000);
      }
     }
    });
