@@ -1,5 +1,6 @@
 /* Norie Finance plug-in — load AFTER the main script:  <script src="finance.js"></script>
-   Adds a Finance tab (telebirr / CBE / Awash), an SMS parser, a cloud inbox pull and a setup card in Settings. */
+   Master-card dashboard (telebirr / CBE / Awash), strict SMS import with duplicate removal,
+   smart advisor (forecast, recurring payments, subscriptions) and a Settings setup card. */
 (function(){
 'use strict';
 
@@ -9,11 +10,19 @@ const BANKS={
   cbe:{n:'CBE',s:/\bcbe\b|commercial\s*bank/i,t:/\bcbe\b|commercial\s*bank/i},
   awash:{n:'Awash',s:/awash/i,t:/awash/i}
 };
+/* any other bank = rejected, so only CBE / Awash / telebirr ever get in */
+const OTHER=/dashen|abyssinia|zemen|wegagen|hibret|\bnib\b|oromia|cooperative|\bcoop\b|bunna|enat\s*bank|berhan|lion\s*bank|amhara\s*bank|siinqee|zamzam|hijra|global\s*bank|addis\s*bank|ahadu|gadaa|tsehay|shabelle|rammis|safaricom|m-?pesa/i;
 const num=s=>parseFloat(String(s).replace(/,/g,''));
 function bankOf(from,text){
-  for(const k in BANKS)if(BANKS[k].s.test(String(from||'').trim()))return k;
-  for(const k in BANKS)if(BANKS[k].t.test(text||''))return k;
-  return null;
+  const fr=String(from||'').trim(),tx=String(text||'');
+  for(const k in BANKS)if(BANKS[k].s.test(fr))return k;
+  if(fr&&!/^\+?\d{3,}$/.test(fr)&&OTHER.test(fr))return null;
+  let best=null,bi=1e9;
+  for(const k in BANKS){const i=tx.search(BANKS[k].t);if(i>=0&&i<bi){bi=i;best=k}}
+  if(!best)return null;
+  const o=tx.search(OTHER);
+  if(o>=0&&o<bi)return null;
+  return best;
 }
 function parse(raw,from){
   const txt=String(raw||'').replace(/\s+/g,' ').trim();
@@ -49,15 +58,34 @@ function parse(raw,from){
 const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
 const ETB=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const ETB0=v=>Math.round(Number(v)).toLocaleString('en-US');
+
+/* two messages are the "same" transaction when: same bank+direction+amount AND
+   (same reference) or (same balance-after) or (within 10 minutes) */
+function same(p,t){
+  if(t.bank!==p.bank||t.dir!==p.dir||Math.abs(t.amt-p.amt)>.005)return false;
+  if(p.ref&&t.ref)return p.ref===t.ref;
+  if(p.bal!=null&&t.bal!=null)return Math.abs(p.bal-t.bal)<.005;
+  return Math.abs(t.ts-p.ts)<10*60000;
+}
 function ingest(items){
-  const f=F(),have=new Set(f.tx.map(t=>t.id));let n=0;
+  const f=F(),have=new Set(f.tx.map(t=>t.id));let added=0,dup=0,bad=0;
   for(const it of items||[]){
-    const p=parse(it.text,it.from);if(!p)continue;
+    const p=parse(it.text,it.from);if(!p){bad++;continue}
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
-    if(have.has(p.id)||f.del[p.id])continue;
-    p.ts=+it.ts||p.when||Date.now();delete p.when;f.tx.push(p);have.add(p.id);n++;
+    p.ts=+it.ts||p.when||Date.now();delete p.when;
+    if(have.has(p.id)||f.del[p.id]||f.tx.some(t=>same(p,t))){dup++;continue}
+    f.tx.push(p);have.add(p.id);added++;
   }
-  if(n){f.tx.sort((a,b)=>b.ts-a.ts);if(f.tx.length>2000)f.tx.length=2000;save()}
+  if(added){f.tx.sort((a,b)=>b.ts-a.ts);if(f.tx.length>2000)f.tx.length=2000;save()}
+  return{added,dup,bad};
+}
+function dedupeAll(){
+  const f=F(),keep=[],now=Date.now();let n=0;
+  f.tx.slice().sort((a,b)=>a.ts-b.ts).forEach(t=>{
+    if(keep.some(k=>same(t,k))){f.del[t.id]=now;n++}else keep.push(t);
+  });
+  if(n){f.tx=keep.sort((a,b)=>b.ts-a.ts);save()}
   return n;
 }
 
@@ -73,19 +101,29 @@ mergeStates=function(a,b){
   return o;
 };
 
-/* ---------- views ---------- */
-let mode='all'; /* all | cards | telebirr | cbe | awash */
-Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7')});
+/* ---------- helpers ---------- */
+let mode='home'; /* home | banks | advice | telebirr | cbe | awash */
+let dirF='all';  /* all | in | out (inside a bank) */
+let lastRec=[];
+Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6')});
 const mstart=()=>{const d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.getTime()};
 function stats(list){const m=mstart();let i=0,o=0;list.forEach(t=>{if(t.ts>=m){t.dir==='in'?i+=t.amt:o+=t.amt}});return{i,o}}
 const latestBal=l=>{const t=l.find(x=>x.bal!=null);return t?t.bal:null};
+function banksBal(){
+  const f=F(),per={};let tot=0,n=0;
+  for(const k in BANKS){const b=latestBal(f.tx.filter(t=>t.bank===k));per[k]=b;if(b!=null){tot+=b;n++}}
+  return{tot,n,per};
+}
+const backBtn=(to,label)=>`<button class="fback" data-fgo="${to}">${ic('chevL',16)}${label}</button>`;
+
+/* ---------- rows ---------- */
 function rowF(t){
   return `<div class="frow" data-ftx="${t.id}"><div class="fic ${t.dir}">${ic(t.dir==='in'?'arrowDown':'arrowUp',16)}</div>
-  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${BANKS[t.bank].n} · ${fmtT(t.ts)}${t.bal!=null?' · Bal '+ETB(t.bal):''}</div></div>
+  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${fmtT(t.ts)}${t.bal!=null?' · Bal '+ETB(t.bal):''}</div></div>
   <div class="fa ${t.dir==='in'?'pos':'neg'}">${t.dir==='in'?'+':'−'}${ETB(t.amt)}</div></div>`;
 }
 function listHTML(list){
-  if(!list.length)return`<div class="empty glass">${ic('dollar',24)}<div style="margin-top:6px">No transactions yet.</div></div>`;
+  if(!list.length)return`<div class="empty glass">${ic('dollar',24)}<div style="margin-top:6px">No transactions here.</div></div>`;
   const g=new Map();list.slice(0,200).forEach(t=>{const k=sod(t.ts);if(!g.has(k))g.set(k,[]);g.get(k).push(t)});
   return [...g].map(([k,a])=>`<h2>${dayLabel(k)}</h2><div class="card glass">${a.map(rowF).join('')}</div>`).join('');
 }
@@ -93,24 +131,25 @@ function cardsHTML(){
   const f=F();
   return Object.keys(BANKS).map(k=>{
     const l=f.tx.filter(t=>t.bank===k),s=stats(l),b=latestBal(l);
-    return `<div class="fcard glass" data-fbank="${k}"><div class="fbadge b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</div>
+    return `<div class="fcard glass" data-fgo="${k}"><div class="fbadge b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</div>
     <div class="fci"><div class="fcn">${BANKS[k].n}</div><div class="fcs">${l.length} transaction${l.length===1?'':'s'}${l[0]?' · last '+dayLabel(l[0].ts):''}</div>
     <div class="fcm"><span class="pos">+${ETB(s.i)}</span><span class="neg">−${ETB(s.o)}</span><i>this month</i></div></div>
     <div class="fcb"><small>Balance</small><b>${b==null?'—':ETB(b)}</b></div></div>`;
   }).join('');
 }
-/* ---------- subscriptions: what they cost over time ---------- */
+
+/* ---------- subscriptions ---------- */
 const PER={week:['Weekly',52/12],month:['Monthly',1],year:['Yearly',1/12]};
 const perMo=s=>s.amt*(PER[s.per]||PER.month)[1];
 function subCardHTML(income){
   const subs=F().subs,m=subs.reduce((a,s)=>a+perMo(s),0);
   const head=`<div class="fsh"><b class="lb">${ic('repeat',16)}Subscriptions</b><button class="chip on" data-fsubadd>+ Add</button></div>`;
-  if(!subs.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add the subscriptions you pay for and see what they cost you over 1 month, 6 months and a year.</p></div>`;
+  if(!subs.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add what you pay for regularly and see the cost over 1 month, 6 months and a year.</p></div>`;
   const pct=income>0?Math.round(m/income*100):null;
   return `<div class="fsub glass">${head}
   <div class="fsbig"><b class="neg">−${ETB(m)}</b><small>ETB every month</small></div>
-  <div class="fspr"><div><small>1 month</small><b>${ETB(m)}</b></div><div><small>6 months</small><b>${ETB(m*6)}</b></div><div><small>1 year</small><b>${ETB(m*12)}</b></div></div>
-  ${pct!=null?`<p class="fcap" style="margin:8px 2px 4px">That’s about <b class="neg">${pct}%</b> of the money you received this month.</p>`:''}
+  <div class="fspr"><div><small>1 month</small><b>${ETB0(m)}</b></div><div><small>6 months</small><b>${ETB0(m*6)}</b></div><div><small>1 year</small><b>${ETB0(m*12)}</b></div></div>
+  ${pct!=null?`<p class="fcap" style="margin:8px 2px 4px">About <b class="neg">${pct}%</b> of your average monthly income.</p>`:''}
   <div class="fsl">${subs.slice().sort((a,b)=>perMo(b)-perMo(a)).map(s=>`<div class="fsr" data-fsub="${s.id}"><div class="fm"><div class="ft">${esc(s.name)}</div><div class="fs">${PER[s.per][0]}${s.per==='month'?'':' · '+ETB(perMo(s))+' / mo'}</div></div><div class="fa neg">−${ETB(s.amt)}</div></div>`).join('')}</div></div>`;
 }
 function finSubAsk(sub){
@@ -137,21 +176,123 @@ function finSubAsk(sub){
   };
   setTimeout(()=>o.querySelector('#fs_n').focus(),60);
 }
-window.vFinance=function(){
-  const f=F(),bank=BANKS[mode]?mode:null;
-  const list=bank?f.tx.filter(t=>t.bank===bank):f.tx,s=stats(list);
-  const cap=mode==='all'?'Tap “All” to split by bank':mode==='cards'?'Tap a bank to open it · tap “All” for every transaction':'Tap “All” to see every transaction';
-  const body=mode==='cards'?cardsHTML():(f.tx.length||bank)?listHTML(list):
-    `<div class="empty glass">${ic('dollar',26)}<div style="margin-top:8px;font-weight:700;color:var(--ink)">No transactions yet</div>
-     <div style="margin-top:4px;font-size:13px">Set up the iPhone Shortcut once and your bank SMS will appear here.</div>
-     <div class="btns"><button class="btn main small" data-fsetup>Open setup</button></div></div>`;
-  return `<h1>${ic('dollar',26)}${bank?BANKS[bank].n:'Finance'}</h1><p class="sub">${mode==='cards'?'By bank':bank?list.length+' transactions':'All banks · '+f.tx.length+' transactions'}</p>
+
+/* ---------- smart advisor (all numbers are estimates from your SMS history) ---------- */
+const MED=a=>{const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const norm=w=>String(w||'').toLowerCase().replace(/[^a-z]+/g,' ').trim();
+function detectRec(f){
+  const t0=sod(Date.now()),g=new Map();
+  f.tx.filter(t=>t.dir==='out'&&t.who&&t.ts>=t0-130*DAY).forEach(t=>{const k=norm(t.who);if(k.length<3)return;(g.get(k)||g.set(k,[]).get(k)).push(t)});
+  const have=f.subs.map(s=>norm(s.name)),out=[];
+  g.forEach((a,k)=>{
+    if(a.length<2||have.some(h=>h&&(h.includes(k)||k.includes(h))))return;
+    a.sort((x,y)=>x.ts-y.ts);
+    const m=MED(a.map(x=>x.amt));if(a.some(x=>Math.abs(x.amt-m)>m*.2))return;
+    const gaps=[];for(let i=1;i<a.length;i++)gaps.push((a[i].ts-a[i-1].ts)/DAY);
+    const gap=MED(gaps),per=gap>=5&&gap<=9?'week':gap>=25&&gap<=36?'month':null;
+    if(!per)return;
+    const last=a[a.length-1];
+    out.push({name:a[0].who,amt:m,per,last:last.ts,next:last.ts+(per==='week'?7:30)*DAY,n:a.length});
+  });
+  return out.sort((x,y)=>perMo(y)-perMo(x)).slice(0,6);
+}
+function advise(){
+  const f=F(),now=Date.now(),t0=sod(now),B=banksBal(),d=new Date();
+  const dim=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(),left=dim-d.getDate();
+  const ms=mstart(),pms=new Date(d.getFullYear(),d.getMonth()-1,1).getTime();
+  const sum=(l,dir)=>l.filter(t=>t.dir===dir).reduce((a,t)=>a+t.amt,0);
+  const first=f.tx.length?f.tx[f.tx.length-1].ts:now;
+  const span=Math.max(1,Math.ceil((t0+DAY-sod(first))/DAY));
+  const win=Math.min(30,span),l30=f.tx.filter(t=>t.ts>=t0+DAY-win*DAY);
+  const dailyOut=sum(l30,'out')/win;
+  const cur=f.tx.filter(t=>t.ts>=ms),spent=sum(cur,'out'),got=sum(cur,'in');
+  const projSpend=spent+dailyOut*left;
+  const w90=Math.min(90,span),l90=f.tx.filter(t=>t.ts>=t0+DAY-w90*DAY);
+  const mIn=sum(l90,'in')/(w90/30),mOut=sum(l90,'out')/(w90/30);
+  const save_=mIn>0?(mIn-mOut)/mIn:null;
+  const prevSpent=sum(f.tx.filter(t=>t.ts>=pms&&t.ts<pms+d.getDate()*DAY),'out');
+  const chg=(first<=pms+3*DAY&&prevSpent>0)?(spent-prevSpent)/prevSpent:null;
+  const runway=B.n&&dailyOut>0?B.tot/dailyOut:null;
+  const endBal=B.n?B.tot-dailyOut*left:null;
+  const sm=f.subs.reduce((a,s)=>a+perMo(s),0),subPct=mIn>0?sm/mIn:null;
+  const rec=detectRec(f);lastRec=rec;
+  const pay=new Map();cur.filter(t=>t.dir==='out').forEach(t=>{const k=t.who||'Other';pay.set(k,(pay.get(k)||0)+t.amt)});
+  const top=[...pay].sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const enough=f.tx.length>=5&&span>=7;
+  const tips=[];
+  if(!enough)tips.push(['info','Not much history yet — import more SMS (a few weeks) and these forecasts get a lot more accurate.']);
+  else{
+    if(runway!=null){
+      if(runway<10)tips.push(['warn',`At your recent pace your balance lasts about ${Math.floor(runway)} days. Cut non-essential spending until your next income.`]);
+      else if(runway<30)tips.push(['info',`Your balance covers roughly ${Math.floor(runway)} days at the current pace — fine, but keep an eye on it.`]);
+      else tips.push(['good',`Your balance covers about ${Math.floor(runway)} days of spending. Comfortable cushion.`]);
+    }
+    if(save_!=null){
+      if(save_<0)tips.push(['warn',`You are spending more than you receive (about ETB ${ETB0(mOut-mIn)} more per month). That drains your balance.`]);
+      else if(save_<.1)tips.push(['info',`You keep only ~${Math.round(save_*100)}% of what comes in. Aim for 10–20% — even a small fixed amount set aside on payday helps.`]);
+      else tips.push(['good',`You keep ~${Math.round(save_*100)}% of your income. Move part of it somewhere you won’t spend it.`]);
+    }
+    if(chg!=null&&chg>.2)tips.push(['warn',`Spending is up ${Math.round(chg*100)}% compared with the same point last month.`]);
+    else if(chg!=null&&chg<-.1)tips.push(['good',`Spending is down ${Math.round(-chg*100)}% compared with the same point last month. Nice.`]);
+    if(top.length&&spent>0&&top[0][1]/spent>.35&&top[0][0]!=='Other')tips.push(['info',`${Math.round(top[0][1]/spent*100)}% of this month’s spending went to ${top[0][0]}.`]);
+  }
+  if(f.subs.length){
+    const big=f.subs.slice().sort((a,b)=>perMo(b)-perMo(a))[0];
+    if(subPct!=null&&subPct>.15)tips.push(['warn',`Subscriptions take ~${Math.round(subPct*100)}% of your income. Review them — cancel what you haven’t used this month.`]);
+    else if(subPct!=null&&subPct>.08)tips.push(['info',`Subscriptions take ~${Math.round(subPct*100)}% of your income. Worth a quick review.`]);
+    tips.push(['info',`Biggest subscription: ${big.name} — ETB ${ETB0(perMo(big)*12)} a year. Is it still worth it?`]);
+  }
+  if(rec.length)tips.push(['info',`${rec.length} payment${rec.length>1?'s look':' looks'} recurring but ${rec.length>1?'aren’t':'isn’t'} in your subscriptions — see “Looks recurring” below.`]);
+  return{B,dailyOut,spent,got,projSpend,runway,endBal,mIn,mOut,sm,rec,top,tips,left,subPct,enough};
+}
+
+/* ---------- screens ---------- */
+function vHome(){
+  const f=F(),B=banksBal(),s=stats(f.tx);
+  const empty=!f.tx.length;
+  return `<h1>${ic('dollar',26)}Finance</h1><p class="sub">${empty?'telebirr · CBE · Awash':B.n+' of 3 banks · '+f.tx.length+' transactions'}</p>
+  <div class="fmaster" data-fgo="banks" role="button" aria-label="Open banks">
+    <div class="fmt">Total balance</div>
+    <div class="fmb"><small>ETB</small>${B.n?ETB(B.tot):'—'}</div>
+    <div class="fmr"><span>${ic('arrowDown',13)}+${ETB(s.i)}</span><span>${ic('arrowUp',13)}−${ETB(s.o)}</span><i>this month</i></div>
+    <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
+  </div>
+  <div class="fact"><button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
+  ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up the iPhone Shortcut</a>.</p>`:''}
+  <div class="fplus glass" data-fgo="advice"><div class="pl">${ic('plus',22)}</div><div><b>Smart advisor</b><small>Forecast, subscriptions &amp; money tips</small></div></div>`;
+}
+function vBanks(){
+  const B=banksBal();
+  return `${backBtn('home','Master card')}<h1>Your banks</h1><p class="sub">${B.n?'Total '+ETB(B.tot)+' ETB':'Tap a bank to see every transaction'}</p>${cardsHTML()}`;
+}
+function vBank(k){
+  const f=F(),all=f.tx.filter(t=>t.bank===k),s=stats(all),b=latestBal(all);
+  const list=dirF==='all'?all:all.filter(t=>t.dir===dirF);
+  return `${backBtn('home','Master card')}<h1>${BANKS[k].n}</h1><p class="sub">${b==null?'No balance yet':'Balance '+ETB(b)+' ETB'} · ${all.length} transactions</p>
   <div class="fsum glass"><div class="fs1"><small>Money in</small><b class="pos">+${ETB(s.i)}</b></div><div class="fs1"><small>Money out</small><b class="neg">−${ETB(s.o)}</b></div><div class="fs1"><small>Net · month</small><b>${s.i-s.o<0?'−':''}${ETB(Math.abs(s.i-s.o))}</b></div></div>
-  ${bank?'':subCardHTML(s.i)}
-  <div class="chips fchips"><button class="chip ${mode==='all'?'on':''}" data-fall>All</button>${mode==='cards'||bank?'<span class="fcur">'+(bank?BANKS[bank].n:'By bank')+'</span>':''}</div>
-  <p class="fcap">${cap}</p>
-  ${body}
-  <div class="btns"><button class="btn small" data-fpaste>Paste SMS</button><button class="btn small" data-fpull>Refresh</button></div>`;
+  <div class="chips fchips">${[['all','All'],['in','In'],['out','Out']].map(([v,n])=>`<button class="chip ${dirF===v?'on':''}" data-fdir="${v}">${n}</button>`).join('')}</div>
+  ${listHTML(list)}`;
+}
+function vAdvice(){
+  const A=advise();
+  const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${ETB(r.amt)} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
+  const top=A.top.length?`<h2>Top spending this month</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">−${ETB(v)}</div></div>`).join('')}</div>`:'';
+  return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>
+  <div class="fsub glass"><div class="fspr" style="margin-top:0">
+    <div><small>Spend / day</small><b>${ETB0(A.dailyOut)}</b></div>
+    <div><small>Month-end spend</small><b>${ETB0(A.projSpend)}</b></div>
+    <div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' d'}</b></div></div>
+    ${A.endBal!=null?`<p class="fcap" style="margin:10px 2px 2px">If no more money comes in, your balance at month end is about <b class="${A.endBal<0?'neg':''}">ETB ${ETB0(A.endBal)}</b> (${A.left} day${A.left===1?'':'s'} left).</p>`:''}</div>
+  <h2>Advice</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(t[1])}</span></div>`).join('')}</div>
+  <h2>Subscriptions</h2>${subCardHTML(A.mIn)}
+  ${rec}${top}
+  <p class="fcap" style="margin:14px 8px 0">Estimates based on your bank SMS — not professional financial advice.</p>`;
+}
+window.vFinance=function(){
+  if(mode==='advice')return vAdvice();
+  if(BANKS[mode])return vBank(mode);
+  if(mode==='banks')return vBanks();
+  return vHome();
 };
 
 /* tab + render hooks (no edit to render() needed) */
@@ -165,7 +306,7 @@ render=function(){
   if(typeof syncNorie==='function')syncNorie();
 };
 
-/* ---------- cloud inbox pull ---------- */
+/* ---------- cloud inbox pull (automatic, no refresh button) ---------- */
 const stGet=()=>{try{return localStorage.getItem('petal.finsms')}catch(_){return null}};
 const stSet=v=>{try{localStorage.setItem('petal.finsms',v)}catch(_){}};
 let pulling=false,lastPull=0;
@@ -178,7 +319,7 @@ async function finPull(manual){
     if(!r||r.status==='error'||!Array.isArray(r.items)){stSet('old');return 0}
     stSet('ok');
     if(!r.items.length)return 0;
-    const n=ingest(r.items);
+    const n=ingest(r.items).added;
     gasCall({action:'smsack',ids:r.items.map(x=>x.id)}).catch(()=>{});
     if(n){if(tab==='finance'&&!isTyping()&&!sheetOpen())render();flash('Finance: '+n+' new transaction'+(n>1?'s':''))}
     return n;
@@ -187,24 +328,37 @@ async function finPull(manual){
 const _lg=loadFromGas;
 loadFromGas=async function(force){const r=await _lg(force);finPull();return r};
 
-/* ---------- paste SMS modal ---------- */
+/* ---------- paste / import SMS ---------- */
+function splitMsgs(text,from){
+  const out=[];
+  text.replace(/\r/g,'').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean).forEach(ch=>{
+    const ls=ch.split('\n').map(x=>x.trim()).filter(Boolean);
+    if(ls.length>1&&ls.filter(l=>parse(l,from)).length>=2)out.push(...ls);else out.push(ch);
+  });
+  return out;
+}
 function finAsk(){
   let o=document.getElementById('finask');if(o)o.remove();
   o=document.createElement('div');o.id='finask';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
-  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Paste bank SMS</b>
-  <textarea id="fa_t" style="margin-top:12px;min-height:130px" placeholder="Paste one or many messages. Leave a blank line between messages."></textarea>
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import bank SMS</b>
+  <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank and telebirr messages are accepted. Duplicates are skipped automatically.</div>
+  <textarea id="fa_t" style="margin-top:12px;min-height:140px" placeholder="Paste one message or your whole history. Put a blank line between messages."></textarea>
   <label>Bank</label><select id="fa_b"><option value="">Auto-detect</option>${Object.keys(BANKS).map(k=>`<option value="${BANKS[k].n}">${BANKS[k].n}</option>`).join('')}</select>
-  <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Add</button></div></div>`;
+  <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Import</button></div></div>`;
   document.body.append(o);
+  o.onclick=e=>{if(e.target===o)o.remove()};
   o.querySelector('#fa_c').onclick=()=>o.remove();
   o.querySelector('#fa_o').onclick=()=>{
     const text=o.querySelector('#fa_t').value,from=o.querySelector('#fa_b').value;
-    const msgs=text.replace(/\r/g,'').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+    const msgs=splitMsgs(text,from);
     if(!msgs.length)return;
-    const n=ingest(msgs.map(m=>({from,text:m})));
+    const r=ingest(msgs.map(m=>({from,text:m})));
     o.remove();
-    flash(n?`Added ${n} of ${msgs.length} message${msgs.length>1?'s':''}`:(msgs.length>1?'Nothing new — no bank transactions found, or already added':'Couldn’t read that message (no bank or amount found), or already added'));
+    const bits=[];
+    if(r.dup)bits.push(r.dup+' duplicate'+(r.dup>1?'s':'')+' skipped');
+    if(r.bad)bits.push(r.bad+' not CBE/Awash/telebirr');
+    flash(r.added?`Imported ${r.added} transaction${r.added>1?'s':''}${bits.length?' · '+bits.join(' · '):''}`:(bits.length?'Nothing new — '+bits.join(' · '):'Nothing to import'));
     if(tab==='finance')render();
   };
 }
@@ -240,18 +394,17 @@ function setupHTML(){
 const copy=async(txt,msg)=>{try{await navigator.clipboard.writeText(txt);flash(msg)}catch(_){flash('Copy failed — select the text and copy it')}};
 $('#app').addEventListener('click',async e=>{
   const T=e.target;
-  if(T.closest('[data-fall]')){mode=mode==='all'?'cards':'all';render();return}
-  const fb=T.closest('[data-fbank]');if(fb){mode=fb.dataset.fbank;render();return}
+  const go=T.closest('[data-fgo]');
+  if(go){mode=go.dataset.fgo;dirF='all';render();scrollTo({top:0});return}
+  const fd=T.closest('[data-fdir]');if(fd){dirF=fd.dataset.fdir;render();return}
   const fx=T.closest('[data-ftx]');
   if(fx){if(confirm('Delete this transaction?')){const f=F();f.del[fx.dataset.ftx]=Date.now();f.tx=f.tx.filter(t=>t.id!==fx.dataset.ftx);save();render()}return}
-  if(T.closest('[data-fsetup]')){tab='settings';render();setTimeout(()=>{const d=document.getElementById('finsetup');if(d){d.open=true;d.scrollIntoView({block:'start'})}},60);return}
+  if(T.closest('[data-fsetup]')){e.preventDefault();tab='settings';render();setTimeout(()=>{const d=document.getElementById('finsetup');if(d){d.open=true;d.scrollIntoView({block:'start'})}},60);return}
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const fsb=T.closest('[data-fsub]');if(fsb){finSubAsk(F().subs.find(x=>x.id===fsb.dataset.fsub));return}
+  const fa=T.closest('[data-fadd]');
+  if(fa){const r=lastRec[+fa.dataset.fadd];if(r){F().subs.push({id:'s'+uid(),name:String(r.name).slice(0,40),amt:r.amt,per:r.per,u:Date.now()});save();render();flash('Added to subscriptions')}return}
   if(T.closest('[data-fpaste]')){finAsk();return}
-  if(T.closest('[data-fpull]')){
-    if(!hasCloud()){flash('Cloud Sync is off — paste an SMS instead');return}
-    const n=await finPull(true);flash(n?n+' new transaction'+(n>1?'s':''):'Up to date');return;
-  }
   if(T.id==='fin_copyurl'){copy(S.settings.gasUrl||'','URL copied');return}
   if(T.id==='fin_copyid'){copy(getUserKey(),'ID copied');return}
   if(T.id==='fin_check'){
@@ -271,6 +424,26 @@ const css=document.createElement('style');
 css.textContent=`
 .bar{width:min(94vw,440px)}.bar button{font-size:10.5px}
 .pos{color:#2f9e6a}.neg{color:var(--pink)}
+.fback{border:0;font:inherit;font-size:13.5px;font-weight:700;color:var(--pink);background:rgba(255,255,255,.7);padding:7px 13px 7px 8px;border-radius:16px;display:inline-flex;align-items:center;gap:2px;cursor:pointer;margin:2px 0 6px;box-shadow:inset 0 1px 0 #fff}
+.fmaster{position:relative;overflow:hidden;cursor:pointer;color:#fff;padding:22px 20px 16px;border-radius:28px;margin:4px 0 0;background:linear-gradient(135deg,#f4687f 0%,#ee7f8c 48%,#d9a53f 100%);box-shadow:0 16px 36px rgba(244,104,127,.34),inset 0 1.5px 0 rgba(255,255,255,.55);transition:transform .15s}
+.fmaster:active{transform:scale(.985)}
+.fmaster::before{content:"";position:absolute;right:-50px;top:-60px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.16)}
+.fmaster::after{content:"";position:absolute;right:34px;bottom:-84px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.1)}
+.fmaster>*{position:relative;z-index:1}
+.fmt{font-size:12px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;opacity:.92}
+.fmb{font-size:38px;font-weight:800;letter-spacing:-1px;margin:6px 0 4px;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:8px}
+.fmb small{font-size:14px;font-weight:700;opacity:.85;letter-spacing:0}
+.fmr{display:flex;gap:14px;font-size:13px;font-weight:700;align-items:center;flex-wrap:wrap}
+.fmr span{display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}.fmr i{font-style:normal;font-weight:500;opacity:.88;font-size:12px}
+.fmf{display:flex;align-items:center;justify-content:space-between;margin-top:18px}
+.fmh{font-size:12px;font-weight:600;opacity:.92}
+.fmd{display:flex;padding-left:7px}
+.fdot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;border:2px solid rgba(255,255,255,.9);margin-left:-7px;font-style:normal}
+.fact{display:flex;justify-content:center;margin:12px 0 4px}
+.fact .chip{font-size:12.5px;padding:7px 13px;display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.fplus{display:flex;align-items:center;gap:13px;padding:14px 16px;margin-top:10px;cursor:pointer;border:1.5px dashed rgba(200,150,46,.55);background:rgba(255,253,243,.5)}
+.fplus .pl{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#ff9aab,var(--pink));box-shadow:0 6px 14px rgba(244,104,127,.35)}
+.fplus b{font-size:15px}.fplus small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .fsum{display:flex;padding:12px 6px;margin:2px 0 8px}
 .fs1{flex:1;text-align:center;min-width:0}.fs1 small{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
 .fs1 b{font-size:15px;font-variant-numeric:tabular-nums}
@@ -283,8 +456,12 @@ css.textContent=`
 .fspr small{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 .fspr b{font-size:14px;font-variant-numeric:tabular-nums}
 .fsl{margin-top:6px}.fsr{display:flex;align-items:center;gap:10px;padding:9px 2px;cursor:pointer;border-top:1px solid rgba(160,120,100,.12)}
-.fchips{margin:6px 2px 2px;align-items:center}.fcur{font-size:13px;font-weight:700;color:var(--muted)}
+.fchips{margin:6px 2px 2px;align-items:center}
 .fcap{font-size:12px;color:var(--muted);margin:0 6px 6px}
+.tip{display:flex;gap:10px;padding:11px 14px;font-size:14px;line-height:1.4;position:relative}
+.tip+.tip::before{content:"";position:absolute;top:0;left:32px;right:0;height:1px;background:rgba(160,120,100,.14)}
+.tip i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:6px}
+.tip.warn i{background:var(--pink)}.tip.good i{background:#2f9e6a}.tip.info i{background:var(--gold)}
 .frow{display:flex;align-items:center;gap:11px;padding:11px 14px;cursor:pointer;position:relative}
 .frow+.frow::before{content:"";position:absolute;top:0;left:57px;right:0;height:1px;background:rgba(160,120,100,.14)}
 .fic{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center}
@@ -302,6 +479,7 @@ css.textContent=`
 document.head.appendChild(css);
 
 window.finParse=parse;
+dedupeAll();
 render();
 finPull(true);
 })();
