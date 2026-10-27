@@ -304,6 +304,11 @@ a{color:var(--pink)}
 .datebox .dl .ic{width:16px;height:16px}
 #sheet .sec{margin:10px 6px 4px}
 .whenrow{margin-top:2px}
+.lrow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 6px;padding:2px}
+.lrow::-webkit-scrollbar{display:none}
+.lchip{flex:none;display:inline-flex;align-items:center;gap:5px;border:0;font:inherit;font-size:12px;font-weight:600;padding:6px 10px;border-radius:14px;background:rgba(255,255,255,.5);color:var(--muted);cursor:pointer}
+.lchip b{font-weight:700;color:var(--ink);font-size:11px}
+.lchip .ic{width:13px;height:13px;color:var(--gold)}
 .dchip{width:36px;height:36px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:13px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -860,7 +865,8 @@ function complete(id){
     const step=()=>{
       if(t.repeat==='daily')d.setDate(d.getDate()+1);
       else if(t.repeat==='weekly')d.setDate(d.getDate()+7);
-      else if(t.repeat==='days'){const ds=t.days&&t.days.length?t.days:[0,1,2,3,4,5,6];do{d.setDate(d.getDate()+1)}while(!ds.includes(d.getDay()))}
+      else if(t.repeat==='days'){const ds=t.days&&t.days.length?t.days:[0,1,2,3,4,5,6],wk=Math.max(1,t.wk||1);do{const pd=d.getDay();d.setDate(d.getDate()+1);if(wk>1&&d.getDay()<pd)d.setDate(d.getDate()+(wk-1)*7)}while(!ds.includes(d.getDay()))}
+      else if(t.repeat==='yearly')d.setFullYear(d.getFullYear()+1);
       else d.setMonth(d.getMonth()+1);
     };
     step();while(d.getTime()<=now)step();
@@ -872,7 +878,7 @@ function complete(id){
 const appURL=()=>location.href.split('#')[0];
 function icsFor(t){
   const f=ms=>{const d=new Date(ms);return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`};
-  const rr=t.repeat==='days'&&t.days&&t.days.length?'FREQ=WEEKLY;BYDAY='+t.days.map(i=>['SU','MO','TU','WE','TH','FR','SA'][i]).join(','):{daily:'FREQ=DAILY',weekly:'FREQ=WEEKLY',monthly:'FREQ=MONTHLY'}[t.repeat];
+  const rr=t.repeat==='days'&&t.days&&t.days.length?'FREQ=WEEKLY;INTERVAL='+(t.wk||1)+';BYDAY='+t.days.map(i=>['SU','MO','TU','WE','TH','FR','SA'][i]).join(','):{daily:'FREQ=DAILY',weekly:'FREQ=WEEKLY',monthly:'FREQ=MONTHLY',yearly:'FREQ=YEARLY'}[t.repeat];
   const e=s=>String(s||'').replace(/([,;\\])/g,'\\$1').replace(/\n/g,'\\n');
   const link=`${appURL()}#t=${t.id}`;
   const desc=[t.notes,`Open in Norie: ${link}`].filter(Boolean).join('\n\n');
@@ -905,14 +911,14 @@ window.addEventListener('hashchange',openFromHash);
 
 /* ---------- rendering ---------- */
 let tab='today',curList=null;
-const TABS=[['today','sun','Today'],['upcoming','calendar','Upcoming'],['draw','pen','Draw'],['lists','list','Lists'],['settings','sliders','Settings']];
+const TABS=[['today','sun','Today'],['upcoming','calendar','Upcoming'],['draw','pen','Draw'],['settings','sliders','Settings']];
 function bar(){
   $('#bar').innerHTML=TABS.map(([k,e,n])=>`<button class="${tab===k?'on':''}" data-t="${k}"><span>${ic(e,23)}</span>${n}</button>`).join('');
 }
 $('#bar').onclick=e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.t;curList=null;render();scrollTo({top:0})};
 
 const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const repLabel=t=>t.repeat==='days'&&t.days&&t.days.length?(t.days.length===7?'daily':t.days.map(i=>DN[i]).join(' ')):t.repeat;
+const repLabel=t=>t.repeat==='days'&&t.days&&t.days.length?((t.wk>1?'every '+t.wk+'w · ':'')+(t.days.length===7?'daily':t.days.map(i=>DN[i]).join(' '))):t.repeat;
 function rowHTML(t,c){
   const now=Date.now(),late=t.due&&!t.done&&t.due<now;
   const L=listOf(t.list),rp=t.repeat&&t.repeat!=='none',lk=isLocked(t);
@@ -958,13 +964,14 @@ function vUpcoming(){
   const t1=sod(Date.now())+DAY;
   const arr=S.tasks.filter(t=>!t.done&&t.due&&t.due>=t1).sort(sortT);
   const groups={};arr.forEach(t=>{const k=sod(t.due);(groups[k]=groups[k]||[]).push(t)});
-  return `<h1>Upcoming</h1><p class="sub">${arr.length} planned ahead</p><div class="cmp">
+  const lrow=`<div class="lrow">${S.lists.map(l=>`<button class="lchip" data-list="${l.id}">${listIc(l,13)}${esc(l.name)}<b>${S.tasks.filter(t=>t.list===l.id&&!t.done).length}</b></button>`).join('')}<button class="lchip" id="newlist">${ic('plus',13)}New</button></div>`;
+  return `<h1>Upcoming</h1><p class="sub">${arr.length} planned ahead</p>${lrow}<div class="cmp">
   ${Object.keys(groups).map(k=>section(dayLabel(+k),groups[k],'',2)).join('')||`<div class="empty glass">${ic('moon',24)}<div style="margin-top:6px">Nothing scheduled ahead.</div></div>`}</div>`;
 }
 function vLists(){
   if(curList){
     const L=listOf(curList),arr=S.tasks.filter(t=>t.list===curList);
-    return `<h1>${listIc(L,26)}${esc(L.name)}</h1><p class="sub"><a href="#" data-back>‹ All lists</a></p>
+    return `<h1>${listIc(L,26)}${esc(L.name)}</h1><p class="sub"><a href="#" data-back>‹ Upcoming</a></p>
     <div class="chips">${LIST_ICONS.map(k=>`<button class="chip em ${icKey(L.e)===k?'on':''}" data-licon="${k}" aria-label="${k}">${ic(k,20)}</button>`).join('')}</div>
     ${section('To do',arr.filter(t=>!t.done).sort(sortT))}${section('Completed',arr.filter(t=>t.done))}
     ${!arr.length?'<div class="empty glass">No tasks here yet.</div>':''}
@@ -1042,7 +1049,7 @@ function vDraw(){return '<div id="dwrap"></div>'}
 function render(){
   bar();
   ORc=null;RBc=null;
-  $('#app').innerHTML={today:vToday,upcoming:vUpcoming,draw:vDraw,lists:vLists,settings:vSettings}[tab]();
+  $('#app').innerHTML={today:vToday,upcoming:()=>curList?vLists():vUpcoming(),draw:vDraw,lists:vLists,settings:vSettings}[tab]();
   $('#fab').style.display=(tab==='settings'||tab==='draw')?'none':'block';
   if(typeof syncNorie==='function')syncNorie();
   if(tab==='settings')updateBadges();
@@ -1061,7 +1068,7 @@ $('#app').addEventListener('click',async e=>{
   const li=T.closest('[data-licon]');if(li&&curList){const L=S.lists.find(x=>x.id===curList);if(L){L.e=li.dataset.licon;save();render()}return}
   const av=T.closest('[data-av]');if(av){S.settings.avatar.type=av.dataset.av;save();render();return}
   if(T.id==='av_pick'){$('#av_file').click();return}
-  if(T.id==='newlist'){const n=prompt('List name?');if(n&&n.trim()){const nl={id:uid(),name:n.trim(),e:'folder'};S.lists.push(nl);curList=nl.id;save();render()}return}
+  if(T.closest('#newlist')){const n=prompt('List name?');if(n&&n.trim()){const nl={id:uid(),name:n.trim(),e:'folder'};S.lists.push(nl);curList=nl.id;save();render()}return}
   const dl=T.dataset.dellist;if(dl){if(S.lists.length<2)return alert('Keep at least one list.');if(confirm('Delete this list?')){S.tasks.forEach(t=>{if(t.list===dl)t.list=S.lists.find(x=>x.id!==dl).id});S.lists=S.lists.filter(x=>x.id!==dl);curList=null;save();render()}return}
   if(T.id==='askperm'){
     if(!('Notification' in window)){const n=$('#notstat');if(n)n.textContent='Not available here. On iPhone: Share → Add to Home Screen, then open Norie from the Home Screen.';return}
@@ -1165,7 +1172,8 @@ function openSheet(t){
   <div class="whenrow"><div class="calnote" id="f_cal"></div><button type="button" class="chip" id="f_clr">Remove</button></div>
   <div class="card glass grp">
     <div class="grow"><span class="lb">${ic('folder')}List</span><select id="f_list">${S.lists.map(l=>`<option value="${l.id}" ${draft.list===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
-    <div class="grow"><span class="lb">${ic('repeat')}Repeat</span><select id="f_rep">${['none','daily','weekly','monthly','days'].map(v=>`<option value="${v}" ${draft.repeat===v?'selected':''}>${v==='none'?'Never':v==='days'?'Custom days':v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
+    <div class="grow"><span class="lb">${ic('repeat')}Repeat</span><select id="f_rep">${['none','daily','weekly','monthly','yearly','days'].map(v=>`<option value="${v}" ${draft.repeat===v?'selected':''}>${v==='none'?'Never':v==='days'?'Custom days':v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
+    <div class="grow" id="f_wkrow" ${draft.repeat==='days'?'':'hidden'}><span class="lb">${ic('calendar')}Every</span><select id="f_wk">${[1,2,3,4].map(n=>`<option value="${n}" ${(draft.wk||1)===n?'selected':''}>${n===1?'Week':n+' weeks'}</option>`).join('')}</select></div>
     <div class="grow" id="f_daysrow" ${draft.repeat==='days'?'':'hidden'}><div class="chips" style="margin:0;flex:1;justify-content:space-between">${['S','M','T','W','T','F','S'].map((n,i)=>`<button type="button" class="chip dchip ${(draft.days||[]).includes(i)?'on':''}" data-day="${i}">${n}</button>`).join('')}</div></div>
     <div class="grow"><span class="lb">${ic('flag')}Important</span>${swHTML('f_imp',draft.prio>0)}</div>
   </div>
@@ -1194,7 +1202,7 @@ $('#sheet').addEventListener('click',e=>{
   if(T.id==='f_del'){if(confirm('Delete task?')){dismissToast(editing.id);S.tasks=S.tasks.filter(x=>x!==editing);save();closeSheet();render()}}
   if(T.id==='f_ics'){
     if(!draft.due)return alert('Pick time first');
-    addToCalendar({...editing,title:$('#f_title').value.trim()||editing.title,notes:$('#f_notes').value.trim(),due:draft.due,repeat:$('#f_rep').value,days:draft.days});
+    addToCalendar({...editing,title:$('#f_title').value.trim()||editing.title,notes:$('#f_notes').value.trim(),due:draft.due,repeat:$('#f_rep').value,days:draft.days,wk:+$('#f_wk').value||1});
   }
 });
 $('#sheet').addEventListener('input',e=>{
@@ -1205,7 +1213,7 @@ $('#sheet').addEventListener('input',e=>{
   }
 });
 $('#sheet').addEventListener('change',e=>{
-  if(e.target.id==='f_rep'){const r=$('#f_daysrow');if(r)r.hidden=e.target.value!=='days'}
+  if(e.target.id==='f_rep'){const h=e.target.value!=='days';['#f_daysrow','#f_wkrow'].forEach(s=>{const r=$(s);if(r)r.hidden=h})}
   if(e.target.id==='f_time'&&e.target.value){
     const [h,m]=e.target.value.split(':').map(Number),d=draft.due?new Date(draft.due):new Date();
     d.setHours(h,m,0,0);draft.manual=true;draft.due=d.getTime();sumUpdate();
@@ -1226,7 +1234,7 @@ function saveSheet(){
     due=d.getTime();
   }
   const nagRaw=$('#f_nag').value,nag=nagRaw===''?null:+nagRaw;
-  const data={title,notes:$('#f_notes').value.trim(),list:$('#f_list').value,due,prio:$('#f_imp').checked?2:0,repeat,nag,days};
+  const data={title,notes:$('#f_notes').value.trim(),list:$('#f_list').value,due,prio:$('#f_imp').checked?2:0,repeat,nag,days,wk:repeat==='days'?(+$('#f_wk').value||1):null};
   let task,dueChanged;
   if(editing){
     dueChanged=editing.due!==due;
