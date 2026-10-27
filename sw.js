@@ -1,5 +1,5 @@
-const CACHE = 'norie-v17';
-const SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
+const CACHE = 'norie-v18';
+const SHELL = ['./', './index.html', './finance.js', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
