@@ -36,7 +36,12 @@ function parse(raw,from){
   let who=w?w[1].trim():'';
   if(/^(your|the|my|a|an|account|acc)\b/i.test(who))who='';
   const r=txt.match(/(?:ref(?:erence)?(?:\s*(?:no|number|id))?|trans(?:action)?\s*(?:id|no|number)|txn\s*id|receipt\s*no)\W{0,4}([A-Z0-9]{6,})/i);
-  return{bank,dir,amt,bal,who,ref:r?r[1]:'',raw:txt.slice(0,400)};
+  let when=null;
+  const d1=txt.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2}))?/);
+  if(d1){if(+d1[2]<=12){const dt=new Date(+d1[3],+d1[2]-1,+d1[1],+(d1[4]||12),+(d1[5]||0));if(isFinite(dt))when=dt.getTime()}}
+  else{const d2=txt.match(/\b(\d{1,2})[- ]([A-Za-z]{3})[a-z]*[- ,]+(\d{4})/);
+    if(d2){const mi='jan feb mar apr may jun jul aug sep oct nov dec'.split(' ').indexOf(d2[2].toLowerCase());if(mi>=0)when=new Date(+d2[3],mi,+d2[1],12,0).getTime()}}
+  return{bank,dir,amt,bal,who,ref:r?r[1]:'',when,raw:txt.slice(0,400)};
 }
 /*PARSE_END*/
 
@@ -50,7 +55,7 @@ function ingest(items){
     const p=parse(it.text,it.from);if(!p)continue;
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
     if(have.has(p.id)||f.del[p.id])continue;
-    p.ts=+it.ts||Date.now();f.tx.push(p);have.add(p.id);n++;
+    p.ts=+it.ts||p.when||Date.now();delete p.when;f.tx.push(p);have.add(p.id);n++;
   }
   if(n){f.tx.sort((a,b)=>b.ts-a.ts);if(f.tx.length>2000)f.tx.length=2000;save()}
   return n;
@@ -146,7 +151,7 @@ window.vFinance=function(){
   <div class="chips fchips"><button class="chip ${mode==='all'?'on':''}" data-fall>All</button>${mode==='cards'||bank?'<span class="fcur">'+(bank?BANKS[bank].n:'By bank')+'</span>':''}</div>
   <p class="fcap">${cap}</p>
   ${body}
-  <div class="btns"><button class="btn small" data-fpaste>Paste SMS</button><button class="btn small" data-fhist>Import history</button><button class="btn small" data-fpull>Refresh</button></div>`;
+  <div class="btns"><button class="btn small" data-fpaste>Paste SMS</button><button class="btn small" data-fpull>Refresh</button></div>`;
 };
 
 /* tab + render hooks (no edit to render() needed) */
@@ -187,48 +192,19 @@ function finAsk(){
   let o=document.getElementById('finask');if(o)o.remove();
   o=document.createElement('div');o.id='finask';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
-  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Paste a bank SMS</b>
-  <textarea id="fa_t" style="margin-top:12px;min-height:130px" placeholder="Paste the message here"></textarea>
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Paste bank SMS</b>
+  <textarea id="fa_t" style="margin-top:12px;min-height:130px" placeholder="Paste one or many messages. Leave a blank line between messages."></textarea>
   <label>Bank</label><select id="fa_b"><option value="">Auto-detect</option>${Object.keys(BANKS).map(k=>`<option value="${BANKS[k].n}">${BANKS[k].n}</option>`).join('')}</select>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Add</button></div></div>`;
   document.body.append(o);
   o.querySelector('#fa_c').onclick=()=>o.remove();
   o.querySelector('#fa_o').onclick=()=>{
     const text=o.querySelector('#fa_t').value,from=o.querySelector('#fa_b').value;
-    if(!text.trim())return;
-    const p=parse(text,from);
-    if(!p){flash('Couldn’t read that message (no bank or amount found)');return}
-    const n=ingest([{from,text,ts:Date.now()}]);o.remove();
-    flash(n?`Added · ${BANKS[p.bank].n} · ${p.dir==='in'?'in':'out'} ${ETB(p.amt)}`:'Already added');
-    if(tab==='finance')render();
-  };
-}
-
-/* ---------- import history (bundle copied by the "Norie history" Shortcut) ----------
-   Each message = 3 lines: ISO date / sender / content. Messages are separated by a line containing only #####. */
-function parseBundle(text){
-  return String(text||'').replace(/\r/g,'').split(/\n?^#####[ \t]*$\n?/m).map(c=>c.trim()).filter(Boolean).map(c=>{
-    const L=c.split('\n'),ts=Date.parse(L[0]);
-    return isFinite(ts)?{ts,from:(L[1]||'').trim(),text:L.slice(2).join('\n')}:{ts:Date.now(),from:'',text:c};
-  });
-}
-function finHist(){
-  let o=document.getElementById('finhist');if(o)o.remove();
-  o=document.createElement('div');o.id='finhist';
-  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
-  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import SMS history</b>
-  <div class="hint" style="margin:6px 0 0">Run the “Norie history” Shortcut (it copies your old bank messages), then paste everything here.</div>
-  <textarea id="fh_t" style="margin-top:12px;min-height:150px" placeholder="Paste here"></textarea>
-  <div class="status" id="fh_s"></div>
-  <div class="btns" style="margin-top:12px"><button class="btn small" id="fh_c">Close</button><button class="btn main small" id="fh_o">Import</button></div></div>`;
-  document.body.append(o);
-  o.querySelector('#fh_c').onclick=()=>o.remove();
-  o.querySelector('#fh_o').onclick=()=>{
-    const items=parseBundle(o.querySelector('#fh_t').value),st=o.querySelector('#fh_s');
-    if(!items.length){st.className='status no';st.textContent='Nothing to import — paste the copied messages first.';return}
-    const n=ingest(items);
-    st.className='status ok';st.textContent=`Read ${items.length} messages · added ${n} transaction${n===1?'':'s'}${n<items.length?' · '+(items.length-n)+' skipped (not a bank transaction, or already added)':''}.`;
-    o.querySelector('#fh_t').value='';
+    const msgs=text.replace(/\r/g,'').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+    if(!msgs.length)return;
+    const n=ingest(msgs.map(m=>({from,text:m})));
+    o.remove();
+    flash(n?`Added ${n} of ${msgs.length} message${msgs.length>1?'s':''}`:(msgs.length>1?'Nothing new — no bank transactions found, or already added':'Couldn’t read that message (no bank or amount found), or already added'));
     if(tab==='finance')render();
   };
 }
@@ -255,7 +231,7 @@ function setupHTML(){
      </ol>
      <div class="btns"><a class="btn small gold" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
      <div class="hl" id="fin_msg">The cloud script (Code.gs) also needs the small Finance addition — see finance-cloud.gs.</div>
-     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button><button class="btn small" data-fhist>Import history</button></div>
+     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
    </div>
   </details>`;
 }
@@ -272,7 +248,6 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const fsb=T.closest('[data-fsub]');if(fsb){finSubAsk(F().subs.find(x=>x.id===fsb.dataset.fsub));return}
   if(T.closest('[data-fpaste]')){finAsk();return}
-  if(T.closest('[data-fhist]')){finHist();return}
   if(T.closest('[data-fpull]')){
     if(!hasCloud()){flash('Cloud Sync is off — paste an SMS instead');return}
     const n=await finPull(true);flash(n?n+' new transaction'+(n>1?'s':''):'Up to date');return;
