@@ -6,8 +6,8 @@
 
 /*PARSE_START*/
 const BANKS={
-  telebirr:{n:'telebirr',s:/tele\s?birr|^\+?(?:251)?127$/i,t:/tele\s?birr/i},
-  cbe:{n:'CBE',s:/\bcbe\b|commercial\s*bank/i,t:/\bcbe\b|commercial\s*bank/i},
+  telebirr:{n:'telebirr',s:/tele\s?birr|^\+?(?:251)?127$/i,t:/tele\s?birr|ethio\s*telecom/i},
+  cbe:{n:'CBE',s:/\bcbe\b|commercial\s*bank/i,t:/\bcbe|commercial\s*bank|combanketh/i},
   awash:{n:'Awash',s:/awash/i,t:/awash/i}
 };
 /* any other bank = rejected, so only CBE / Awash / telebirr ever get in */
@@ -37,7 +37,7 @@ function parse(raw,from){
   }
   if(bal==null){const b=txt.match(/balance[^\d]{0,25}([\d,]+(?:\.\d+)?)/i);if(b)bal=num(b[1])}
   if(amt==null)return null;
-  const IN=/credit|received|deposit|refund|cash in/i,OUT=/debit|transferr|\bsent\b|paid|payment|withdraw|purchas|bought|airtime|recharge|\bbill/i;
+  const IN=/credit|received|deposit|refund|cash in|salary/i,OUT=/debit|transfer|\bsent\b|paid|payment|withdraw|purchas|bought|airtime|recharge|\bbill|deduct|charge|spent/i;
   const i=txt.search(IN),o=txt.search(OUT);
   let dir=null;if(i>=0&&(o<0||i<o))dir='in';else if(o>=0)dir='out';
   if(!dir)return null;
@@ -51,6 +51,12 @@ function parse(raw,from){
   else{const d2=txt.match(/\b(\d{1,2})[- ]([A-Za-z]{3})[a-z]*[- ,]+(\d{4})/);
     if(d2){const mi='jan feb mar apr may jun jul aug sep oct nov dec'.split(' ').indexOf(d2[2].toLowerCase());if(mi>=0)when=new Date(+d2[3],mi,+d2[1],12,0).getTime()}}
   return{bank,dir,amt,bal,who,ref:r?r[1]:'',when,raw:txt.slice(0,400)};
+}
+function why(raw,from){
+  const txt=String(raw||'').replace(/\s+/g,' ').trim();
+  if(!bankOf(from,txt))return OTHER.test(txt)?'other bank':'no bank name or link';
+  if(!/(?:ETB|Birr|Br)\.?\s*[\d,]+|[\d,]+\.\d{2}\s*(?:ETB|Birr)/i.test(txt))return 'no ETB amount';
+  return 'no credit/debit wording';
 }
 /*PARSE_END*/
 
@@ -69,16 +75,16 @@ function same(p,t){
   return Math.abs(t.ts-p.ts)<10*60000;
 }
 function ingest(items){
-  const f=F(),have=new Set(f.tx.map(t=>t.id));let added=0,dup=0,bad=0;
+  const f=F(),have=new Set(f.tx.map(t=>t.id));let added=0,dup=0,bad=0,reason='';
   for(const it of items||[]){
-    const p=parse(it.text,it.from);if(!p){bad++;continue}
+    const p=parse(it.text,it.from);if(!p){bad++;if(!reason)reason=why(it.text,it.from);continue}
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
     p.ts=+it.ts||p.when||Date.now();delete p.when;
     if(have.has(p.id)||f.del[p.id]||f.tx.some(t=>same(p,t))){dup++;continue}
     f.tx.push(p);have.add(p.id);added++;
   }
   if(added){f.tx.sort((a,b)=>b.ts-a.ts);if(f.tx.length>2000)f.tx.length=2000;save()}
-  return{added,dup,bad};
+  return{added,dup,bad,reason};
 }
 function dedupeAll(){
   const f=F(),keep=[],now=Date.now();let n=0;
@@ -342,7 +348,7 @@ function finAsk(){
   o=document.createElement('div');o.id='finask';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
   o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import bank SMS</b>
-  <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank and telebirr messages are accepted. Duplicates are skipped automatically.</div>
+  <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank and telebirr are accepted — the bank name or its link (e.g. awashbank) anywhere in the message is enough. If a message has neither, pick the bank below.</div>
   <textarea id="fa_t" style="margin-top:12px;min-height:140px" placeholder="Paste one message or your whole history. Put a blank line between messages."></textarea>
   <label>Bank</label><select id="fa_b"><option value="">Auto-detect</option>${Object.keys(BANKS).map(k=>`<option value="${BANKS[k].n}">${BANKS[k].n}</option>`).join('')}</select>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Import</button></div></div>`;
@@ -357,7 +363,7 @@ function finAsk(){
     o.remove();
     const bits=[];
     if(r.dup)bits.push(r.dup+' duplicate'+(r.dup>1?'s':'')+' skipped');
-    if(r.bad)bits.push(r.bad+' not CBE/Awash/telebirr');
+    if(r.bad)bits.push(r.bad+' not read ('+r.reason+')');
     flash(r.added?`Imported ${r.added} transaction${r.added>1?'s':''}${bits.length?' · '+bits.join(' · '):''}`:(bits.length?'Nothing new — '+bits.join(' · '):'Nothing to import'));
     if(tab==='finance')render();
   };
