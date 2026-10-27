@@ -146,7 +146,7 @@ window.vFinance=function(){
   <div class="chips fchips"><button class="chip ${mode==='all'?'on':''}" data-fall>All</button>${mode==='cards'||bank?'<span class="fcur">'+(bank?BANKS[bank].n:'By bank')+'</span>':''}</div>
   <p class="fcap">${cap}</p>
   ${body}
-  <div class="btns"><button class="btn small" data-fpaste>Paste SMS</button><button class="btn small" data-fpull>Refresh</button></div>`;
+  <div class="btns"><button class="btn small" data-fpaste>Paste SMS</button><button class="btn small" data-fhist>Import history</button><button class="btn small" data-fpull>Refresh</button></div>`;
 };
 
 /* tab + render hooks (no edit to render() needed) */
@@ -204,6 +204,35 @@ function finAsk(){
   };
 }
 
+/* ---------- import history (bundle copied by the "Norie history" Shortcut) ----------
+   Each message = 3 lines: ISO date / sender / content. Messages are separated by a line containing only #####. */
+function parseBundle(text){
+  return String(text||'').replace(/\r/g,'').split(/\n?^#####[ \t]*$\n?/m).map(c=>c.trim()).filter(Boolean).map(c=>{
+    const L=c.split('\n'),ts=Date.parse(L[0]);
+    return isFinite(ts)?{ts,from:(L[1]||'').trim(),text:L.slice(2).join('\n')}:{ts:Date.now(),from:'',text:c};
+  });
+}
+function finHist(){
+  let o=document.getElementById('finhist');if(o)o.remove();
+  o=document.createElement('div');o.id='finhist';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import SMS history</b>
+  <div class="hint" style="margin:6px 0 0">Run the “Norie history” Shortcut (it copies your old bank messages), then paste everything here.</div>
+  <textarea id="fh_t" style="margin-top:12px;min-height:150px" placeholder="Paste here"></textarea>
+  <div class="status" id="fh_s"></div>
+  <div class="btns" style="margin-top:12px"><button class="btn small" id="fh_c">Close</button><button class="btn main small" id="fh_o">Import</button></div></div>`;
+  document.body.append(o);
+  o.querySelector('#fh_c').onclick=()=>o.remove();
+  o.querySelector('#fh_o').onclick=()=>{
+    const items=parseBundle(o.querySelector('#fh_t').value),st=o.querySelector('#fh_s');
+    if(!items.length){st.className='status no';st.textContent='Nothing to import — paste the copied messages first.';return}
+    const n=ingest(items);
+    st.className='status ok';st.textContent=`Read ${items.length} messages · added ${n} transaction${n===1?'':'s'}${n<items.length?' · '+(items.length-n)+' skipped (not a bank transaction, or already added)':''}.`;
+    o.querySelector('#fh_t').value='';
+    if(tab==='finance')render();
+  };
+}
+
 /* ---------- settings: setup card ---------- */
 const _vs=vSettings;
 vSettings=function(){return _vs()+setupHTML()};
@@ -226,7 +255,7 @@ function setupHTML(){
      </ol>
      <div class="btns"><a class="btn small gold" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
      <div class="hl" id="fin_msg">The cloud script (Code.gs) also needs the small Finance addition — see finance-cloud.gs.</div>
-     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
+     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button><button class="btn small" data-fhist>Import history</button></div>
    </div>
   </details>`;
 }
@@ -243,6 +272,7 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const fsb=T.closest('[data-fsub]');if(fsb){finSubAsk(F().subs.find(x=>x.id===fsb.dataset.fsub));return}
   if(T.closest('[data-fpaste]')){finAsk();return}
+  if(T.closest('[data-fhist]')){finHist();return}
   if(T.closest('[data-fpull]')){
     if(!hasCloud()){flash('Cloud Sync is off — paste an SMS instead');return}
     const n=await finPull(true);flash(n?n+' new transaction'+(n>1?'s':''):'Up to date');return;
