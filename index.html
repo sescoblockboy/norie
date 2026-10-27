@@ -384,7 +384,7 @@ function mergeStates(a,b){
   out.drawProjects=[...projectMap.values()];
   return out;
 }
-const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{},x.draw||0,x.drawProjects||[]]);
+const dataSig=x=>JSON.stringify([x.tasks,x.lists,x.deleted||{},x.dl||{},x.draw||0,x.drawProjects||[],x.fin||0]);
 
 let syncBusy=false,syncQueued=false,pushT=null,lastSyncOk=0,syncState='idle',calMsg=(()=>{try{return localStorage.getItem('petal.cal')}catch(_){return null}})();
 const setCal=v=>{calMsg=v;try{v==null?localStorage.removeItem('petal.cal'):localStorage.setItem('petal.cal',v)}catch(_){}};
@@ -2375,5 +2375,6 @@ const fromLink=openFromHash();
 initNorie();
 if(!fromLink&&S.settings.greet!==false)showHello();
 </script>
+<script src="finance.js"></script>
 </body>
 </html>
