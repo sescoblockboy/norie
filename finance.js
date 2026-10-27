@@ -111,7 +111,10 @@ mergeStates=function(a,b){
 let mode='home'; /* home | banks | advice | telebirr | cbe | awash */
 let dirF='all';  /* all | in | out (inside a bank) */
 let lastRec=[];
-Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6')});
+let hide=true;try{hide=localStorage.getItem('petal.finhide')!=='0'}catch(_){}
+const DOTS='\u2022\u2022\u2022\u2022\u2022\u2022';
+Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6'),eyeOff:_p('M9.88 9.88a3 3 0 1 0 4.24 4.24','M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68','M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61','M2 2l20 20')});
+if(!ICONS.eye)ICONS.eye=_p('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z')+'<circle cx="12" cy="12" r="3"/>';
 const mstart=()=>{const d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.getTime()};
 function stats(list){const m=mstart();let i=0,o=0;list.forEach(t=>{if(t.ts>=m){t.dir==='in'?i+=t.amt:o+=t.amt}});return{i,o}}
 const latestBal=l=>{const t=l.find(x=>x.bal!=null);return t?t.bal:null};
@@ -140,7 +143,7 @@ function cardsHTML(){
     return `<div class="fcard glass" data-fgo="${k}"><div class="fbadge b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</div>
     <div class="fci"><div class="fcn">${BANKS[k].n}</div><div class="fcs">${l.length} transaction${l.length===1?'':'s'}${l[0]?' · last '+dayLabel(l[0].ts):''}</div>
     <div class="fcm"><span class="pos">+${ETB(s.i)}</span><span class="neg">−${ETB(s.o)}</span><i>this month</i></div></div>
-    <div class="fcb"><small>Balance</small><b>${b==null?'—':ETB(b)}</b></div></div>`;
+    <div class="fcb"><small>Balance</small><b>${b==null?'—':hide?DOTS:ETB(b)}</b></div></div>`;
   }).join('');
 }
 
@@ -258,9 +261,9 @@ function vHome(){
   const empty=!f.tx.length;
   return `<h1>${ic('dollar',26)}Finance</h1><p class="sub">${empty?'telebirr · CBE · Awash':B.n+' of 3 banks · '+f.tx.length+' transactions'}</p>
   <div class="fmaster" data-fgo="banks" role="button" aria-label="Open banks">
-    <div class="fmt">Total balance</div>
-    <div class="fmb"><small>ETB</small>${B.n?ETB(B.tot):'—'}</div>
-    <div class="fmr"><span>${ic('arrowDown',13)}+${ETB(s.i)}</span><span>${ic('arrowUp',13)}−${ETB(s.o)}</span><i>this month</i></div>
+    <div class="fmtop"><div class="fmt">Total balance</div><button class="feye" data-feye aria-label="Show or hide balance">${ic(hide?'eyeOff':'eye',18)}</button></div>
+    <div class="fmb"><small>ETB</small>${B.n?(hide?DOTS:ETB(B.tot)):'—'}</div>
+    <div class="fmr"><span>${ic('arrowDown',13)}${hide?'•••':'+'+ETB(s.i)}</span><span>${ic('arrowUp',13)}${hide?'•••':'−'+ETB(s.o)}</span><i>this month</i></div>
     <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
   </div>
   <div class="fact"><button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
@@ -400,6 +403,7 @@ function setupHTML(){
 const copy=async(txt,msg)=>{try{await navigator.clipboard.writeText(txt);flash(msg)}catch(_){flash('Copy failed — select the text and copy it')}};
 $('#app').addEventListener('click',async e=>{
   const T=e.target;
+  if(T.closest('[data-feye]')){hide=!hide;try{localStorage.setItem('petal.finhide',hide?'1':'0')}catch(_){}render();return}
   const go=T.closest('[data-fgo]');
   if(go){mode=go.dataset.fgo;dirF='all';render();scrollTo({top:0});return}
   const fd=T.closest('[data-fdir]');if(fd){dirF=fd.dataset.fdir;render();return}
@@ -436,6 +440,9 @@ css.textContent=`
 .fmaster::before{content:"";position:absolute;right:-50px;top:-60px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.16)}
 .fmaster::after{content:"";position:absolute;right:34px;bottom:-84px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.1)}
 .fmaster>*{position:relative;z-index:1}
+.fmtop{display:flex;align-items:center;justify-content:space-between}
+.feye{border:0;color:#fff;background:rgba(255,255,255,.26);width:36px;height:36px;border-radius:50%;display:grid;place-items:center;cursor:pointer;padding:0;margin:-6px -6px 0 0}
+.feye .ic{vertical-align:0}
 .fmt{font-size:12px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;opacity:.92}
 .fmb{font-size:38px;font-weight:800;letter-spacing:-1px;margin:6px 0 4px;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:8px}
 .fmb small{font-size:14px;font-weight:700;opacity:.85;letter-spacing:0}
