@@ -111,8 +111,38 @@ mergeStates=function(a,b){
 let mode='home'; /* home | banks | advice | telebirr | cbe | awash */
 let dirF='all';  /* all | in | out (inside a bank) */
 let lastRec=[];
-let hide=true;try{hide=localStorage.getItem('petal.finhide')!=='0'}catch(_){}
+let hide=true,hideT=null;
 const DOTS='\u2022\u2022\u2022\u2022\u2022\u2022';
+const M=x=>hide?DOTS:x;
+const MT=x=>hide?String(x).replace(/ETB\s?[\d,]+(?:\.\d+)?/g,'ETB \u2022\u2022\u2022'):x;
+
+/* ---------- Face ID gate (WebAuthn platform authenticator = Face ID / Touch ID / passcode on the phone) ---------- */
+const LK='petal.finkey';
+const b64=u=>btoa(String.fromCharCode(...new Uint8Array(u)));
+const unb=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function faceUnlock(){
+  if(!window.PublicKeyCredential||!navigator.credentials||!window.crypto)throw new Error('unsupported');
+  const ch=crypto.getRandomValues(new Uint8Array(32));let id=null;
+  try{id=localStorage.getItem(LK)}catch(_){}
+  if(id){
+    await navigator.credentials.get({publicKey:{challenge:ch,allowCredentials:[{type:'public-key',id:unb(id),transports:['internal']}],userVerification:'required',timeout:60000}});
+  }else{
+    const c=await navigator.credentials.create({publicKey:{challenge:ch,rp:{name:'Norie'},user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'norie',displayName:'Norie'},
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},timeout:60000,attestation:'none'}});
+    try{localStorage.setItem(LK,b64(c.rawId))}catch(_){}
+  }
+}
+function lockNow(){hide=true;clearTimeout(hideT)}
+async function toggleHide(){
+  if(!hide){lockNow();render();return}
+  try{
+    await faceUnlock();hide=false;render();
+    clearTimeout(hideT);hideT=setTimeout(()=>{lockNow();if(tab==='finance')render()},120000);
+  }catch(e){
+    flash(e&&e.message==='unsupported'?'Face ID isn’t available here — open Norie from your Home Screen icon':'Face ID cancelled — amounts stay hidden');
+  }
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&!hide){lockNow();if(tab==='finance')render()}});
 Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6'),eyeOff:_p('M9.88 9.88a3 3 0 1 0 4.24 4.24','M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68','M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61','M2 2l20 20')});
 if(!ICONS.eye)ICONS.eye=_p('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z')+'<circle cx="12" cy="12" r="3"/>';
 const mstart=()=>{const d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.getTime()};
@@ -123,13 +153,14 @@ function banksBal(){
   for(const k in BANKS){const b=latestBal(f.tx.filter(t=>t.bank===k));per[k]=b;if(b!=null){tot+=b;n++}}
   return{tot,n,per};
 }
-const backBtn=(to,label)=>`<button class="fback" data-fgo="${to}">${ic('chevL',16)}${label}</button>`;
+const eyeBtn=()=>`<button class="feye dk" data-feye aria-label="Show or hide amounts">${ic(hide?'eyeOff':'eye',18)}</button>`;
+const backBtn=(to,label)=>`<div class="ftop"><button class="fback" data-fgo="${to}">${ic('chevL',16)}${label}</button>${eyeBtn()}</div>`;
 
 /* ---------- rows ---------- */
 function rowF(t){
   return `<div class="frow" data-ftx="${t.id}"><div class="fic ${t.dir}">${ic(t.dir==='in'?'arrowDown':'arrowUp',16)}</div>
-  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${fmtT(t.ts)}${t.bal!=null?' · Bal '+ETB(t.bal):''}</div></div>
-  <div class="fa ${t.dir==='in'?'pos':'neg'}">${t.dir==='in'?'+':'−'}${ETB(t.amt)}</div></div>`;
+  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${fmtT(t.ts)}${t.bal!=null?' · Bal '+M(ETB(t.bal)):''}</div></div>
+  <div class="fa ${t.dir==='in'?'pos':'neg'}">${M((t.dir==='in'?'+':'−')+ETB(t.amt))}</div></div>`;
 }
 function listHTML(list){
   if(!list.length)return`<div class="empty glass">${ic('dollar',24)}<div style="margin-top:6px">No transactions here.</div></div>`;
@@ -142,8 +173,8 @@ function cardsHTML(){
     const l=f.tx.filter(t=>t.bank===k),s=stats(l),b=latestBal(l);
     return `<div class="fcard glass" data-fgo="${k}"><div class="fbadge b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</div>
     <div class="fci"><div class="fcn">${BANKS[k].n}</div><div class="fcs">${l.length} transaction${l.length===1?'':'s'}${l[0]?' · last '+dayLabel(l[0].ts):''}</div>
-    <div class="fcm"><span class="pos">+${ETB(s.i)}</span><span class="neg">−${ETB(s.o)}</span><i>this month</i></div></div>
-    <div class="fcb"><small>Balance</small><b>${b==null?'—':hide?DOTS:ETB(b)}</b></div></div>`;
+    <div class="fcm"><span class="pos">${M('+'+ETB(s.i))}</span><span class="neg">${M('−'+ETB(s.o))}</span><i>this month</i></div></div>
+    <div class="fcb"><small>Balance</small><b>${b==null?'—':M(ETB(b))}</b></div></div>`;
   }).join('');
 }
 
@@ -156,10 +187,10 @@ function subCardHTML(income){
   if(!subs.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add what you pay for regularly and see the cost over 1 month, 6 months and a year.</p></div>`;
   const pct=income>0?Math.round(m/income*100):null;
   return `<div class="fsub glass">${head}
-  <div class="fsbig"><b class="neg">−${ETB(m)}</b><small>ETB every month</small></div>
-  <div class="fspr"><div><small>1 month</small><b>${ETB0(m)}</b></div><div><small>6 months</small><b>${ETB0(m*6)}</b></div><div><small>1 year</small><b>${ETB0(m*12)}</b></div></div>
+  <div class="fsbig"><b class="neg">${M('−'+ETB(m))}</b><small>ETB every month</small></div>
+  <div class="fspr"><div><small>1 month</small><b>${M(ETB0(m))}</b></div><div><small>6 months</small><b>${M(ETB0(m*6))}</b></div><div><small>1 year</small><b>${M(ETB0(m*12))}</b></div></div>
   ${pct!=null?`<p class="fcap" style="margin:8px 2px 4px">About <b class="neg">${pct}%</b> of your average monthly income.</p>`:''}
-  <div class="fsl">${subs.slice().sort((a,b)=>perMo(b)-perMo(a)).map(s=>`<div class="fsr" data-fsub="${s.id}"><div class="fm"><div class="ft">${esc(s.name)}</div><div class="fs">${PER[s.per][0]}${s.per==='month'?'':' · '+ETB(perMo(s))+' / mo'}</div></div><div class="fa neg">−${ETB(s.amt)}</div></div>`).join('')}</div></div>`;
+  <div class="fsl">${subs.slice().sort((a,b)=>perMo(b)-perMo(a)).map(s=>`<div class="fsr" data-fsub="${s.id}"><div class="fm"><div class="ft">${esc(s.name)}</div><div class="fs">${PER[s.per][0]}${s.per==='month'?'':' · '+M(ETB(perMo(s)))+' / mo'}</div></div><div class="fa neg">${M('−'+ETB(s.amt))}</div></div>`).join('')}</div></div>`;
 }
 function finSubAsk(sub){
   let o=document.getElementById('finsub');if(o)o.remove();
@@ -272,27 +303,27 @@ function vHome(){
 }
 function vBanks(){
   const B=banksBal();
-  return `${backBtn('home','Master card')}<h1>Your banks</h1><p class="sub">${B.n?'Total '+ETB(B.tot)+' ETB':'Tap a bank to see every transaction'}</p>${cardsHTML()}`;
+  return `${backBtn('home','Master card')}<h1>Your banks</h1><p class="sub">${B.n?'Total '+M(ETB(B.tot))+' ETB':'Tap a bank to see every transaction'}</p>${cardsHTML()}`;
 }
 function vBank(k){
   const f=F(),all=f.tx.filter(t=>t.bank===k),s=stats(all),b=latestBal(all);
   const list=dirF==='all'?all:all.filter(t=>t.dir===dirF);
-  return `${backBtn('home','Master card')}<h1>${BANKS[k].n}</h1><p class="sub">${b==null?'No balance yet':'Balance '+ETB(b)+' ETB'} · ${all.length} transactions</p>
-  <div class="fsum glass"><div class="fs1"><small>Money in</small><b class="pos">+${ETB(s.i)}</b></div><div class="fs1"><small>Money out</small><b class="neg">−${ETB(s.o)}</b></div><div class="fs1"><small>Net · month</small><b>${s.i-s.o<0?'−':''}${ETB(Math.abs(s.i-s.o))}</b></div></div>
+  return `${backBtn('home','Master card')}<h1>${BANKS[k].n}</h1><p class="sub">${b==null?'No balance yet':'Balance '+M(ETB(b))+' ETB'} · ${all.length} transactions</p>
+  <div class="fsum glass"><div class="fs1"><small>Money in</small><b class="pos">${M('+'+ETB(s.i))}</b></div><div class="fs1"><small>Money out</small><b class="neg">${M('−'+ETB(s.o))}</b></div><div class="fs1"><small>Net · month</small><b>${M((s.i-s.o<0?'−':'')+ETB(Math.abs(s.i-s.o)))}</b></div></div>
   <div class="chips fchips">${[['all','All'],['in','In'],['out','Out']].map(([v,n])=>`<button class="chip ${dirF===v?'on':''}" data-fdir="${v}">${n}</button>`).join('')}</div>
   ${listHTML(list)}`;
 }
 function vAdvice(){
   const A=advise();
-  const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${ETB(r.amt)} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
-  const top=A.top.length?`<h2>Top spending this month</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">−${ETB(v)}</div></div>`).join('')}</div>`:'';
+  const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${M(ETB(r.amt))} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
+  const top=A.top.length?`<h2>Top spending this month</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
   return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>
   <div class="fsub glass"><div class="fspr" style="margin-top:0">
-    <div><small>Spend / day</small><b>${ETB0(A.dailyOut)}</b></div>
-    <div><small>Month-end spend</small><b>${ETB0(A.projSpend)}</b></div>
+    <div><small>Spend / day</small><b>${M(ETB0(A.dailyOut))}</b></div>
+    <div><small>Month-end spend</small><b>${M(ETB0(A.projSpend))}</b></div>
     <div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' d'}</b></div></div>
-    ${A.endBal!=null?`<p class="fcap" style="margin:10px 2px 2px">If no more money comes in, your balance at month end is about <b class="${A.endBal<0?'neg':''}">ETB ${ETB0(A.endBal)}</b> (${A.left} day${A.left===1?'':'s'} left).</p>`:''}</div>
-  <h2>Advice</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(t[1])}</span></div>`).join('')}</div>
+    ${A.endBal!=null?`<p class="fcap" style="margin:10px 2px 2px">If no more money comes in, your balance at month end is about <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b> (${A.left} day${A.left===1?'':'s'} left).</p>`:''}</div>
+  <h2>Advice</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>
   <h2>Subscriptions</h2>${subCardHTML(A.mIn)}
   ${rec}${top}
   <p class="fcap" style="margin:14px 8px 0">Estimates based on your bank SMS — not professional financial advice.</p>`;
@@ -308,7 +339,7 @@ window.vFinance=function(){
 TABS.splice(4,0,['finance','dollar','Finance']);
 const _render=render;
 render=function(){
-  if(tab!=='finance')return _render();
+  if(tab!=='finance'){if(!hide)lockNow();return _render()}
   bar();ORc=null;RBc=null;
   $('#app').innerHTML=vFinance();
   $('#fab').style.display='none';
@@ -331,6 +362,7 @@ async function finPull(manual){
     const n=ingest(r.items).added;
     gasCall({action:'smsack',ids:r.items.map(x=>x.id)}).catch(()=>{});
     if(n){if(tab==='finance'&&!isTyping()&&!sheetOpen())render();flash('Finance: '+n+' new transaction'+(n>1?'s':''))}
+    if(r.items.length>=100)setTimeout(()=>finPull(true),700);
     return n;
   }catch(_){return 0}finally{pulling=false}
 }
@@ -381,16 +413,15 @@ function setupHTML(){
   return `<details class="glass setrow" id="finsetup">
    <summary><b class="lb">${ic('dollar')}Finance (bank SMS)</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
    <div class="setwrap">
-     <p>An iPhone Shortcut automation sends each bank SMS to your cloud script; Norie picks them up and sorts them into telebirr, CBE and Awash. Needs Cloud Sync.</p>
+     <p>Two small Shortcuts: one saves every bank SMS to a file on your phone (works offline), the other sends the file to Norie whenever there is internet.</p>
      <label>Your sync ID</label><input id="fin_uid" value="${esc(getUserKey())}" readonly>
      <label>Web App URL</label><input id="fin_url" value="${esc(url)}" readonly>
      <div class="btns"><button class="btn small" id="fin_copyurl">Copy URL</button><button class="btn small" id="fin_copyid">Copy ID</button></div>
      <ol class="steps">
-       <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
-       <li>Message Contains: <b>ETB</b> (add a second one for <b>Birr</b> if a bank uses it). Choose <b>Run Immediately</b>.</li>
-       <li>New blank automation → action <b>Get Contents of URL</b>. URL = the one above. Show More → Method <b>POST</b>, Request Body <b>JSON</b>.</li>
-       <li>Add 4 fields: <b>action</b> = sms · <b>userId</b> = your sync ID · <b>from</b> = Shortcut Input › Sender · <b>text</b> = Shortcut Input › Content.</li>
-       <li>Come back here and tap <b>Check connection</b>.</li>
+       <li><b>Shortcut “Norie Send Queue”</b>: Get File <b>queue.txt</b> → Text (the File) → Get Contents of URL (POST, JSON: <b>action</b>=smsq, <b>userId</b>=your sync ID, <b>q</b>=Text) → if <b>status</b> is <b>ok</b>, save an empty Text over queue.txt.</li>
+       <li><b>Automation “Message”</b> (sender: CBE / 127 / Awash Bank): Text = date, Sender, Content, <b>#####</b> → Append to Text File queue.txt → Run Shortcut Norie Send Queue. Run Immediately.</li>
+       <li><b>Automation “Wi-Fi”</b> + <b>“Airplane Mode off”</b>: Run Shortcut Norie Send Queue.</li>
+       <li>Tap <b>Check connection</b> below.</li>
      </ol>
      <div class="btns"><a class="btn small gold" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
      <div class="hl" id="fin_msg">The cloud script (Code.gs) also needs the small Finance addition — see finance-cloud.gs.</div>
@@ -403,7 +434,7 @@ function setupHTML(){
 const copy=async(txt,msg)=>{try{await navigator.clipboard.writeText(txt);flash(msg)}catch(_){flash('Copy failed — select the text and copy it')}};
 $('#app').addEventListener('click',async e=>{
   const T=e.target;
-  if(T.closest('[data-feye]')){hide=!hide;try{localStorage.setItem('petal.finhide',hide?'1':'0')}catch(_){}render();return}
+  if(T.closest('[data-feye]')){await toggleHide();return}
   const go=T.closest('[data-fgo]');
   if(go){mode=go.dataset.fgo;dirF='all';render();scrollTo({top:0});return}
   const fd=T.closest('[data-fdir]');if(fd){dirF=fd.dataset.fdir;render();return}
@@ -443,6 +474,8 @@ css.textContent=`
 .fmtop{display:flex;align-items:center;justify-content:space-between}
 .feye{border:0;color:#fff;background:rgba(255,255,255,.26);width:36px;height:36px;border-radius:50%;display:grid;place-items:center;cursor:pointer;padding:0;margin:-6px -6px 0 0}
 .feye .ic{vertical-align:0}
+.feye.dk{color:var(--muted);background:rgba(255,255,255,.7);margin:0;box-shadow:inset 0 1px 0 #fff}
+.ftop{display:flex;align-items:center;gap:8px;margin:2px 0 6px}.ftop .fback{margin:0}
 .fmt{font-size:12px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;opacity:.92}
 .fmb{font-size:38px;font-weight:800;letter-spacing:-1px;margin:6px 0 4px;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:8px}
 .fmb small{font-size:14px;font-weight:700;opacity:.85;letter-spacing:0}
