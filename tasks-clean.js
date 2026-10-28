@@ -62,8 +62,9 @@ function openReport(t){
     t.created?['Added',esc(fmtD(t.created))]:null,
     t.done?['Status','Done']:null
   ].filter(Boolean);
-  const longTitle=ct!==full?pts(full):[],notes=pts(t.notes);
-  const det=(longTitle.length?`<div class="trs2">Full task</div>${bul(longTitle)}`:'')+(notes.length?`<div class="trs2">Notes</div>${bul(notes)}`:'');
+  /* everything you wrote, exactly as typed (title text that was shortened + notes) */
+  const txt=[ct!==full?full:'',String(t.notes||'').trim()].filter(Boolean).join('\n\n');
+  const det=txt?`<div class="trs2">Details</div><div class="trf">${esc(txt)}</div>`:'';
   let o=document.getElementById('trep');if(o)o.remove();
   o=document.createElement('div');o.id='trep';
   o.innerHTML=`<div class="trb" data-rx></div><div class="trc" role="dialog" aria-label="Task details"><div class="grab"></div>
@@ -142,6 +143,7 @@ css.textContent=`
 #trep .trk span{color:var(--muted);font-weight:600}#trep .trk b{font-weight:600;text-align:right;display:inline-flex;align-items:center;gap:5px}
 #trep .late{color:var(--pink)}#trep .mu{color:var(--muted);font-weight:500}
 #trep .trs2{font-size:11.5px;font-weight:700;letter-spacing:.8px;color:var(--gold);margin:18px 4px 6px;text-transform:uppercase}
+#trep .trf{margin:0 4px;font-size:15.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
 #trep .trp{margin:0 4px;font-size:15px;line-height:1.5}
 #trep .trl{margin:0;padding:0 4px 0 22px;font-size:15px;line-height:1.45}#trep .trl li{margin:5px 0;padding-left:2px}
 #trep .trl li::marker{color:var(--pink)}
