@@ -60,6 +60,9 @@ function why(raw,from){
 }
 /*PARSE_END*/
 
+/* automatic messages are accepted ONLY when the sender is CBE, 127 (telebirr) or Awash Bank — a friend's number is always rejected */
+const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:251)?127$|cbe|commercial\s*bank|awash/i.test(fr)};
+
 /* ---------- state ---------- */
 const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
@@ -359,7 +362,7 @@ async function finPull(manual){
     if(!r||r.status==='error'||!Array.isArray(r.items)){stSet('old');return 0}
     stSet('ok');
     if(!r.items.length)return 0;
-    const n=ingest(r.items).added;
+    const n=ingest(r.items.filter(x=>SENDER_OK(x.from))).added;
     gasCall({action:'smsack',ids:r.items.map(x=>x.id)}).catch(()=>{});
     if(n){if(tab==='finance'&&!isTyping()&&!sheetOpen())render();flash('Finance: '+n+' new transaction'+(n>1?'s':''))}
     if(r.items.length>=100)setTimeout(()=>finPull(true),700);
