@@ -1,7 +1,7 @@
 /* Norie Tasks Clean — load AFTER the main script (and after finance.js):  <script src="tasks-clean.js"></script>
    1) Long task text becomes a short, clean title in Today / Upcoming / Lists (the full text is never lost).
    2) Tapping a task opens a tidy report (title, facts, details, notes). "Edit" opens the normal editor.
-   3) New/edited tasks with a very long title are saved as: short title + the full text in Notes. */
+   Titles are always saved exactly as you type them. */
 (function(){
 'use strict';
 
@@ -51,7 +51,11 @@ let cur=null;
 function nagLabel(n){return n==null?'':n===0?'Once only':n>=60?(n/60)+' hour':'Every '+n+' min'}
 function openReport(t){
   cur=t.id;
-  const full=String(t.title||'').replace(/\s+/g,' ').trim(),ct=cleanTitle(full)||'Untitled',L=listOf(t.list);
+  let full=String(t.title||'').replace(/\s+/g,' ').trim(),notes=String(t.notes||'').trim();
+  /* tasks saved by the earlier version: short title + full sentence as the first paragraph of Notes */
+  const first=notes.split('\n\n')[0].replace(/\s+/g,' ').trim();
+  if(first.length>full.length&&cleanTitle(first)===full){full=first;notes=notes.split('\n\n').slice(1).join('\n\n').trim()}
+  const L=listOf(t.list);
   const late=t.due&&!t.done&&t.due<Date.now(),rp=t.repeat&&t.repeat!=='none';
   const facts=[
     t.due?['When',`<span class="${late?'late':''}">${esc(dayLabel(t.due))}, ${esc(fmtT(t.due))}${late?' · overdue':''}</span>`]:['When','<span class="mu">No date</span>'],
@@ -62,13 +66,11 @@ function openReport(t){
     t.created?['Added',esc(fmtD(t.created))]:null,
     t.done?['Status','Done']:null
   ].filter(Boolean);
-  /* everything you wrote, exactly as typed (title text that was shortened + notes) */
-  const txt=[ct!==full?full:'',String(t.notes||'').trim()].filter(Boolean).join('\n\n');
-  const det=txt?`<div class="trs2">Details</div><div class="trf">${esc(txt)}</div>`:'';
+  const det=notes?`<div class="trs2">Notes</div><div class="trf">${esc(notes)}</div>`:'';
   let o=document.getElementById('trep');if(o)o.remove();
   o=document.createElement('div');o.id='trep';
   o.innerHTML=`<div class="trb" data-rx></div><div class="trc" role="dialog" aria-label="Task details"><div class="grab"></div>
-    <div class="trt">${esc(ct)}</div>
+    <div class="trt${full.length>70?' lg':''}">${esc(full||'Untitled')}</div>
     <div class="trk">${facts.map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>
     ${det}
     <div class="btns"><button class="btn main" data-rdone>${t.done?'Reopen':(isRep(t)?'Done for today':'Mark done')}</button><button class="btn" data-redit>Edit</button><button class="btn danger" data-rdel>Delete</button></div></div>`;
@@ -97,34 +99,6 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeReport()});
 
-/* ---------- 3) long titles are saved as short title + full text in Notes ---------- */
-const _save=saveSheet;
-saveSheet=function(){
-  try{
-    const ti=document.getElementById('f_title'),no=document.getElementById('f_notes');
-    if(ti&&no){
-      let raw=ti.value.replace(/\s+/g,' ').trim(),work=raw;
-      if(raw.length>LIM){
-        /* new task typed in natural language: read the date/time from the full text first, so it isn't lost */
-        if(!editing&&!draft.manual&&typeof parseQuick==='function'){
-          const p=parseQuick(raw);
-          if(p.due){draft.manual=true;draft.due=p.due}
-          const rep=document.getElementById('f_rep');if(p.repeat!=='none'&&rep&&rep.value==='none')rep.value=p.repeat;
-          draft.manual=true;work=p.title||raw;
-        }
-        const c=cleanTitle(work);
-        if(c&&c!==raw){
-          const old=no.value.trim();
-          no.value=raw+(old?'\n\n'+old:'');
-          ti.value=c;
-          flash('Long title shortened — the full text is in Notes');
-        }
-      }
-    }
-  }catch(_){}
-  return _save();
-};
-
 window.cleanTitle=cleanTitle;
 
 /* ---------- styles ---------- */
@@ -136,6 +110,7 @@ css.textContent=`
 #trep .trc{position:absolute;left:0;right:0;bottom:0;margin:0 auto;width:min(680px,100%);max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 20px calc(env(safe-area-inset-bottom) + 20px);border-radius:30px 30px 0 0;background:rgba(255,250,243,.99);box-shadow:0 -10px 34px rgba(120,60,70,.18);transform:translate3d(0,105%,0);transition:transform .26s cubic-bezier(.2,.9,.25,1)}
 #trep.on .trc{transform:translate3d(0,0,0)}
 #trep .grab{width:42px;height:5px;border-radius:5px;background:rgba(120,90,90,.25);margin:0 auto 16px}
+#trep .trt.lg{font-size:20px;line-height:1.3;letter-spacing:-.2px}
 #trep .trt{font-size:24px;font-weight:800;line-height:1.2;letter-spacing:-.4px;margin:0 2px 14px;word-break:break-word}
 #trep .trk{border-radius:18px;background:rgba(255,255,255,.7);box-shadow:inset 0 1px 0 #fff;padding:2px 14px}
 #trep .trk>div{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 0;font-size:14.5px}
