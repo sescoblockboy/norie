@@ -78,6 +78,7 @@ const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:25
 const NORIE_CLOUD_URL='';
 const SHORTCUT_LINK='';
 const SHORTCUT_LINK_PRIVATE='';   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
+const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
 const SHORTCUT_LINK_READ='';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
    People who already have a cloud URL stay on Auto; everybody else starts on Private. */
@@ -480,7 +481,7 @@ async function finClipImport(){
 }
 function finRunLocal(){
   try{sessionStorage.setItem('finwait','1')}catch(_){}
-  location.href='shortcuts://run-shortcut?name='+encodeURIComponent('Norie Read Queue');
+  location.href='shortcuts://run-shortcut?name='+encodeURIComponent(READ_NAME);
 }
 function finReadyAsk(){
   let o=document.getElementById('finready');if(o)o.remove();
