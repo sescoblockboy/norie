@@ -72,8 +72,29 @@ function why(raw,from){
 /* automatic messages are accepted ONLY when the sender is CBE, 127 (telebirr) or Awash Bank — a friend's number is always rejected */
 const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:251)?127$|cbe|commercial\s*bank|awash/i.test(fr)};
 
-/* After you build + share the 3 Shortcuts, paste their iCloud links here. Empty = button hidden. */
-const SHORTCUT_LINKS={setup:'',send:'',receive:''};
+/* ===== EDIT THESE TWO LINES ONCE (then upload finance.js) =====
+   NORIE_CLOUD_URL : your Apps Script Web App URL (…/exec). Every user shares it, so nobody ever sees Apps Script.
+   SHORTCUT_LINK   : the iCloud link of the "Norie Bank SMS" shortcut (Shortcuts → ••• → Share → Copy iCloud Link). */
+const NORIE_CLOUD_URL='';
+const SHORTCUT_LINK='';
+const SHORTCUT_LINK_PRIVATE='';   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
+const SHORTCUT_LINK_READ='';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
+/* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
+   People who already have a cloud URL stay on Auto; everybody else starts on Private. */
+const isAuto=()=>!!(S.settings.gasUrl||'').trim();
+function setMode(m){
+  const s=S.settings;
+  if(m==='auto'){
+    const u=(s.gasUrlKept||NORIE_CLOUD_URL||'').trim();
+    if(!u){flash('Auto mode needs a cloud address — the app owner has not added one yet');return}
+    s.gasUrl=u;getUserKey();
+  }else{
+    if((s.gasUrl||'').trim())s.gasUrlKept=s.gasUrl;
+    s.gasUrl='';
+  }
+  save();render();
+  flash(m==='auto'?'Auto mode on':'Private mode on — everything stays on this phone');
+}
 
 /* ---------- state ---------- */
 const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];return S.fin};
@@ -329,8 +350,8 @@ function vHome(){
     <div class="fmr"><span>${ic('arrowDown',13)}${hide?'•••':'+'+ETB(s.i)}</span><span>${ic('arrowUp',13)}${hide?'•••':'−'+ETB(s.o)}</span><i>this month</i></div>
     <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
   </div>
-  <div class="fact"><button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
-  ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up the iPhone Shortcut</a>.</p>`:''}
+  <div class="fact">${isAuto()?'':`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
+  ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up automatic capture</a>.</p>`:''}
   <div class="fplus glass" data-fgo="advice"><div class="pl">${ic('plus',22)}</div><div><b>Smart advisor</b><small>Forecast, subscriptions &amp; money tips</small></div></div>`;
 }
 function vBanks(){
@@ -436,30 +457,84 @@ function finAsk(){
   };
 }
 
+/* ---------- Private mode: import the phone's own queue file (no cloud) ---------- */
+function qItems(text){
+  return String(text||'').replace(/\r/g,'').split(/^#####[ \t]*$/m).map(c=>c.trim()).filter(Boolean).map(c=>{
+    const L=c.split('\n'),ts=Date.parse(L[0]),ok=isFinite(ts)&&L.length>=3;
+    return{from:ok?String(L[1]||'').trim():'',text:(ok?L.slice(2):L).join('\n').trim(),ts:ok?ts:0};
+  }).filter(x=>x.text&&SENDER_OK(x.from));
+}
+function finReport(r){
+  const bits=[];
+  if(r.dup)bits.push(r.dup+' already had');
+  if(r.bad)bits.push(r.bad+' not read');
+  flash(r.added?`Imported ${r.added} new transaction${r.added>1?'s':''}${bits.length?' · '+bits.join(' · '):''}`:(bits.length?'Nothing new — '+bits.join(' · '):'No bank messages found'));
+  if(tab==='finance'&&!isTyping()&&!sheetOpen())render();
+}
+async function finClipImport(){
+  let t='';
+  try{t=await navigator.clipboard.readText()}catch(_){flash('Paste was blocked — use “Paste SMS” instead');finAsk();return}
+  const items=qItems(t);
+  if(!items.length){flash('No CBE / 127 / Awash messages on the clipboard');return}
+  finReport(ingest(items));
+}
+function finRunLocal(){
+  try{sessionStorage.setItem('finwait','1')}catch(_){}
+  location.href='shortcuts://run-shortcut?name='+encodeURIComponent('Norie Read Queue');
+}
+function finReadyAsk(){
+  let o=document.getElementById('finready');if(o)o.remove();
+  o=document.createElement('div');o.id='finready';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(360px,100%);text-align:center"><b style="font-size:18px">Your messages are ready</b>
+  <div class="hint" style="margin:6px 0 14px">Tap Import. If iPhone asks to allow Paste, choose <b>Allow</b>.</div>
+  <div class="btns" style="justify-content:center"><button class="btn small" id="fr_c">Not now</button><button class="btn main small" id="fr_o">Import</button></div></div>`;
+  document.body.append(o);
+  o.querySelector('#fr_c').onclick=()=>o.remove();
+  o.querySelector('#fr_o').onclick=async()=>{o.remove();await finClipImport()};
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  let w=null;try{w=sessionStorage.getItem('finwait');sessionStorage.removeItem('finwait')}catch(_){}
+  if(w&&!isAuto())setTimeout(finReadyAsk,250);
+});
+window.finQItems=qItems;window.finClipImport=finClipImport;window.finSetMode=setMode;
+
 /* ---------- settings: setup card ---------- */
 const _vs=vSettings;
 vSettings=function(){return _vs()+setupHTML()};
 function setupHTML(){
-  const url=(S.settings.gasUrl||'').trim(),st=stGet(),L=SHORTCUT_LINKS,hasL=L.setup||L.send||L.receive;
-  const badge=!url?['Needs Cloud',''] :st==='ok'?['Ready ✓','ok']:st==='old'?['Update Code.gs','no']:['Not checked',''];
-  const btn=(h,t)=>h?`<a class="btn small gold" href="${esc(h)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">${t}</a>`:'';
+  const auto=isAuto(),url=(S.settings.gasUrl||'').trim(),st=stGet();
+  const badge=!auto?['Private',''] :st==='ok'?['Auto ✓','ok']:st==='old'?['Cloud update needed','no']:['Auto',''];
+  const btn=(href,label,primary)=>href?`<a class="btn ${primary?'main ':''}small" href="${esc(href)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">${label}</a>`:'';
+  const modeBar=`<div class="fspr" style="margin:0 0 12px"><div data-fmode="private" style="cursor:pointer;${!auto?'background:var(--pink);color:#fff':''}"><b>Private</b><br><small>stays on this phone</small></div><div data-fmode="auto" style="cursor:pointer;${auto?'background:var(--pink);color:#fff':''}"><b>Auto</b><br><small>uses Norie cloud</small></div></div>`;
+  const priv=`
+     <p><b>Private mode.</b> Your tasks and bank messages never leave this phone. No account, no cloud.</p>
+     <ol class="steps">
+       <li>Install the two shortcuts: ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)||'<i>(link not added yet)</i>'} ${btn(SHORTCUT_LINK_READ,'Norie Read Queue',0)||''}</li>
+       <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.</li>
+       <li>In Norie’s Finance tab tap <b>Import new SMS</b> whenever you want your latest messages in.</li>
+     </ol>
+     <div class="btns"><button class="btn main small" id="fin_clip">Import from clipboard</button><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
+     <div class="hint" style="margin-top:8px"><b>Telegram in Private mode:</b> a bot cannot schedule messages, so reminders reach Telegram only while Norie is open. Switch to Auto if you want them while the app is closed.</div>`;
+  const cloud=`
+     <p><b>Auto mode.</b> Bank messages arrive by themselves, and Telegram reminders fire even when Norie is closed. Your data is stored in the shared Norie cloud under your private ID.</p>
+     ${SHORTCUT_LINK?`<div class="btns" style="margin-top:4px"><a class="btn main" id="fin_install" href="${esc(SHORTCUT_LINK)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Install the shortcut</a></div>`:`<div class="hl">The shortcut link isn’t added yet.</div>`}
+     <ol class="steps">
+       <li>Tap <b>Install the shortcut</b>. Your private ID is copied for you.</li>
+       <li>When Shortcuts asks for your ID, tap the box, choose <b>Paste</b>, then <b>Add Shortcut</b>.</li>
+       <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.</li>
+     </ol>
+     <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" id="fin_copyid">Copy my ID</button></div>
+     <div class="hl" id="fin_msg">Your ID is private and random: <b>${esc(getUserKey())}</b></div>
+     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button><button class="btn small danger" id="fin_reset">New sync ID</button></div>
+     <div class="hint" style="margin-top:8px">Privacy: the person who runs Norie’s cloud could technically see stored data, so only use Auto if you trust them.</div>`;
   return `<details class="glass setrow" id="finsetup">
-   <summary><b class="lb">${ic('dollar')}Finance (bank SMS)</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
+   <summary><b class="lb">${ic('dollar')}Finance &amp; sync mode</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
    <div class="setwrap">
-     <p>Messages from <b>CBE, 127 (telebirr) and Awash Bank</b> are saved on your iPhone (works offline) and sent to <b>your own</b> Norie cloud when you have internet.</p>
-     ${hasL?`<label>Step 1 — install the Shortcuts (tap Add Shortcut)</label>
-     <div class="btns" style="margin-top:6px">${btn(L.setup,'Norie Setup')}${btn(L.send,'Norie Send Queue')}${btn(L.receive,'Norie Receive')}</div>
-     <label>Step 2 — copy your setup code, then open <b>Norie Setup</b> and run it once</label>
-     <div class="btns" style="margin-top:6px"><button class="btn main small" id="fin_code">Copy setup code</button></div>
-     <label>Step 3 — one automation (iOS can’t share these)</label>
-     <ol class="steps"><li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b>. Message Contains: <b>ETB</b>. Choose <b>Run Immediately</b>.</li>
-     <li>New Blank Automation → <b>Run Shortcut</b> → <b>Norie Receive</b> → Done.</li></ol>`
-     :`<div class="hl">Shortcut links aren’t added yet — see the setup guide.</div>`}
-     <label>Your private sync ID</label><input id="fin_uid" value="${esc(getUserKey())}" readonly>
-     <div class="btns"><button class="btn small" id="fin_copyurl">Copy URL</button><button class="btn small" id="fin_copyid">Copy ID</button><button class="btn small danger" id="fin_reset">New sync ID</button></div>
-     <div class="btns"><a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
-     <div class="hl" id="fin_msg">Tap Check connection after setup.</div>
-     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
+     <p>Bank messages from <b>CBE, 127 (telebirr) and Awash Bank</b> only.</p>
+     ${modeBar}
+     ${auto?cloud:priv}
    </div>
   </details>`;
 }
@@ -488,16 +563,16 @@ $('#app').addEventListener('click',async e=>{
   const fsb=T.closest('[data-fsub]');if(fsb){finSubAsk(F().subs.find(x=>x.id===fsb.dataset.fsub));return}
   const fa=T.closest('[data-fadd]');
   if(fa){const r=lastRec[+fa.dataset.fadd];if(r){F().subs.push({id:'s'+uid(),name:String(r.name).slice(0,40),amt:r.amt,per:r.per,u:Date.now()});save();render();flash('Added to subscriptions')}return}
+  if(T.closest('[data-frun]')){finRunLocal();return}
   if(T.closest('[data-fpaste]')){finAsk();return}
+  const md=T.closest('[data-fmode]');if(md){setMode(md.dataset.fmode);return}
+  if(T.id==='fin_clip'){finClipImport();return}
   if(T.id==='fin_copyurl'){copy(S.settings.gasUrl||'','URL copied');return}
   if(T.id==='fin_copyid'){copy(getUserKey(),'ID copied');return}
-  if(T.id==='fin_code'){
-    if(!hasCloud()){flash('Set up Cloud Sync first (paste your Web App URL)');return}
-    copy((S.settings.gasUrl||'').trim()+'\n'+getUserKey(),'Setup code copied — now run “Norie Setup”');return;
-  }
+  if(T.closest('#fin_install')){try{navigator.clipboard.writeText(getUserKey())}catch(_){}flash('Your ID is copied — paste it when Shortcuts asks');return}
   if(T.id==='fin_reset'){
     if(!confirm('Make a brand-new private sync ID for this phone? Your tasks stay on this phone and are uploaded under the new ID. You will need to copy the setup code again.'))return;
-    S.settings.syncId='u'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);save();render();
+    S.settings.syncId=newSyncId();save();render();
     if(getUserKey()!==S.settings.syncId)flash('Update index.html first (see instructions)');else flash('New private sync ID created');return;
   }
   if(T.id==='tg_find'){
