@@ -340,7 +340,9 @@ const isTyping=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement
 const sheetOpen=()=>document.getElementById('sheet').classList.contains('on');
 /* Private sync ID: NOT the display name any more (everyone defaulted to "yishak" and shared one cloud file).
    Existing cloud users keep their old name-based ID; new installs get a random one. */
-const getUserKey=()=>{const s=S.settings;if(!s.syncId){const legacy=((s.name||'yishak').trim()||'yishak').toLowerCase();s.syncId=(s.gasUrl||'').trim()?legacy:'u'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4)}return s.syncId};
+const newSyncId=()=>{try{const a=new Uint8Array(10);crypto.getRandomValues(a);return 'u'+[...a].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(_){return 'u'+Math.random().toString(36).slice(2,12)+Date.now().toString(36)}};
+const getUserKey=()=>{const s=S.settings;if(!s.syncId){const legacy=((s.name||'yishak').trim()||'yishak').toLowerCase();s.syncId=(s.gasUrl||'').trim()?legacy:newSyncId()}return s.syncId};
+getUserKey();
 const hasCloud=()=>!!(S.settings.gasUrl||'').trim();
 
 /* Offline-first sync: every change is saved on this phone first and flagged "unsent".
