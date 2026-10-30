@@ -38,8 +38,17 @@ function parse(raw,from){
   if(bal==null){const b=txt.match(/balance[^\d]{0,25}([\d,]+(?:\.\d+)?)/i);if(b)bal=num(b[1])}
   if(amt==null)return null;
   const IN=/credit|received|deposit|refund|cash in|salary/i,OUT=/debit|transfer|\bsent\b|paid|payment|withdraw|purchas|bought|airtime|recharge|\bbill|deduct|charge|spent/i;
-  const i=txt.search(IN),o=txt.search(OUT);
-  let dir=null;if(i>=0&&(o<0||i<o))dir='in';else if(o>=0)dir='out';
+  let dir=null;
+  /* 1) the sentence about YOUR account: "your account ... has been debited / credited" */
+  const own=txt.match(/\byour\s+(?:acc(?:oun)?t|a\/c)\b[^.]{0,70}?\b(debited|credited)\b/i);
+  if(own)dir=/^debit/i.test(own[1])?'out':'in';
+  /* 2) "you have received / sent / transferred / paid ..." */
+  if(!dir){const y=txt.match(/\byou(?:'ve| have)?\s+(received|sent|transferred|transfered|paid|withdrawn|deposited|purchased|bought)\b/i);if(y)dir=/^(received|deposited)/i.test(y[1])?'in':'out'}
+  /* 3) only one kind of word is present */
+  const hasIn=IN.test(txt),hasOut=OUT.test(txt);
+  if(!dir){if(hasOut&&!hasIn)dir='out';else if(hasIn&&!hasOut)dir='in'}
+  /* 4) both present: the first one wins */
+  if(!dir){const i=txt.search(IN),o=txt.search(OUT);if(i>=0&&(o<0||i<o))dir='in';else if(o>=0)dir='out'}
   if(!dir)return null;
   const w=txt.match(/\b(?:to|from)\s+([A-Za-z][A-Za-z0-9 .&'\-]{2,38}?)(?=\s+(?:on|at|with|ETB|Birr|Br|account|acc|Ref|Your|for|using|via)\b|[,.(]|$)/i);
   let who=w?w[1].trim():'';
@@ -63,6 +72,9 @@ function why(raw,from){
 /* automatic messages are accepted ONLY when the sender is CBE, 127 (telebirr) or Awash Bank — a friend's number is always rejected */
 const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:251)?127$|cbe|commercial\s*bank|awash/i.test(fr)};
 
+/* After you build + share the 3 Shortcuts, paste their iCloud links here. Empty = button hidden. */
+const SHORTCUT_LINKS={setup:'',send:'',receive:''};
+
 /* ---------- state ---------- */
 const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
@@ -77,6 +89,22 @@ function same(p,t){
   if(p.bal!=null&&t.bal!=null)return Math.abs(p.bal-t.bal)<.005;
   return Math.abs(t.ts-p.ts)<10*60000;
 }
+function fixDir(p,list){
+  if(p.bal==null)return;
+  let prev=null;
+  for(const t of list){if(t.bank===p.bank&&t.bal!=null&&t.ts<p.ts&&t.id!==p.id&&(!prev||t.ts>prev.ts))prev=t}
+  if(!prev)return;
+  const d=p.bal-prev.bal;
+  if(Math.abs(d-p.amt)<=0.011)p.dir='in';
+  else if(d<0&&-d>=p.amt-0.011&&-d<=p.amt*1.1+10)p.dir='out';
+}
+function repairAll(){
+  const f=F();let n=0;
+  f.tx.forEach(t=>{const q=t.raw?parse(t.raw,BANKS[t.bank]?BANKS[t.bank].n:''):null;if(q&&q.bank===t.bank&&q.dir!==t.dir){t.dir=q.dir;n++}});
+  f.tx.slice().sort((a,b)=>a.ts-b.ts).forEach(t=>{const d=t.dir;fixDir(t,f.tx);if(t.dir!==d)n++});
+  if(n)save();
+  return n;
+}
 function ingest(items){
   const f=F(),have=new Set(f.tx.map(t=>t.id));let added=0,dup=0,bad=0,reason='';
   for(const it of items||[]){
@@ -84,6 +112,7 @@ function ingest(items){
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
     p.ts=+it.ts||p.when||Date.now();delete p.when;
     if(have.has(p.id)||f.del[p.id]||f.tx.some(t=>same(p,t))){dup++;continue}
+    fixDir(p,f.tx);
     f.tx.push(p);have.add(p.id);added++;
   }
   if(added){f.tx.sort((a,b)=>b.ts-a.ts);if(f.tx.length>2000)f.tx.length=2000;save()}
@@ -342,7 +371,7 @@ window.vFinance=function(){
 TABS.splice(4,0,['finance','dollar','Finance']);
 const _render=render;
 render=function(){
-  if(tab!=='finance'){if(!hide)lockNow();return _render()}
+  if(tab!=='finance'){if(!hide)lockNow();const r=_render();if(tab==='settings')tgEnhance();return r}
   bar();ORc=null;RBc=null;
   $('#app').innerHTML=vFinance();
   $('#fab').style.display='none';
@@ -411,26 +440,37 @@ function finAsk(){
 const _vs=vSettings;
 vSettings=function(){return _vs()+setupHTML()};
 function setupHTML(){
-  const url=(S.settings.gasUrl||'').trim(),st=stGet();
+  const url=(S.settings.gasUrl||'').trim(),st=stGet(),L=SHORTCUT_LINKS,hasL=L.setup||L.send||L.receive;
   const badge=!url?['Needs Cloud',''] :st==='ok'?['Ready ✓','ok']:st==='old'?['Update Code.gs','no']:['Not checked',''];
+  const btn=(h,t)=>h?`<a class="btn small gold" href="${esc(h)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">${t}</a>`:'';
   return `<details class="glass setrow" id="finsetup">
    <summary><b class="lb">${ic('dollar')}Finance (bank SMS)</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
    <div class="setwrap">
-     <p>Two small Shortcuts: one saves every bank SMS to a file on your phone (works offline), the other sends the file to Norie whenever there is internet.</p>
-     <label>Your sync ID</label><input id="fin_uid" value="${esc(getUserKey())}" readonly>
-     <label>Web App URL</label><input id="fin_url" value="${esc(url)}" readonly>
-     <div class="btns"><button class="btn small" id="fin_copyurl">Copy URL</button><button class="btn small" id="fin_copyid">Copy ID</button></div>
-     <ol class="steps">
-       <li><b>Shortcut “Norie Send Queue”</b>: Get File <b>queue.txt</b> → Text (the File) → Get Contents of URL (POST, JSON: <b>action</b>=smsq, <b>userId</b>=your sync ID, <b>q</b>=Text) → if <b>status</b> is <b>ok</b>, save an empty Text over queue.txt.</li>
-       <li><b>Automation “Message”</b> (sender: CBE / 127 / Awash Bank): Text = date, Sender, Content, <b>#####</b> → Append to Text File queue.txt → Run Shortcut Norie Send Queue. Run Immediately.</li>
-       <li><b>Automation “Wi-Fi”</b> + <b>“Airplane Mode off”</b>: Run Shortcut Norie Send Queue.</li>
-       <li>Tap <b>Check connection</b> below.</li>
-     </ol>
-     <div class="btns"><a class="btn small gold" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
-     <div class="hl" id="fin_msg">The cloud script (Code.gs) also needs the small Finance addition — see finance-cloud.gs.</div>
+     <p>Messages from <b>CBE, 127 (telebirr) and Awash Bank</b> are saved on your iPhone (works offline) and sent to <b>your own</b> Norie cloud when you have internet.</p>
+     ${hasL?`<label>Step 1 — install the Shortcuts (tap Add Shortcut)</label>
+     <div class="btns" style="margin-top:6px">${btn(L.setup,'Norie Setup')}${btn(L.send,'Norie Send Queue')}${btn(L.receive,'Norie Receive')}</div>
+     <label>Step 2 — copy your setup code, then open <b>Norie Setup</b> and run it once</label>
+     <div class="btns" style="margin-top:6px"><button class="btn main small" id="fin_code">Copy setup code</button></div>
+     <label>Step 3 — one automation (iOS can’t share these)</label>
+     <ol class="steps"><li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b>. Message Contains: <b>ETB</b>. Choose <b>Run Immediately</b>.</li>
+     <li>New Blank Automation → <b>Run Shortcut</b> → <b>Norie Receive</b> → Done.</li></ol>`
+     :`<div class="hl">Shortcut links aren’t added yet — see the setup guide.</div>`}
+     <label>Your private sync ID</label><input id="fin_uid" value="${esc(getUserKey())}" readonly>
+     <div class="btns"><button class="btn small" id="fin_copyurl">Copy URL</button><button class="btn small" id="fin_copyid">Copy ID</button><button class="btn small danger" id="fin_reset">New sync ID</button></div>
+     <div class="btns"><a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a><button class="btn main small" id="fin_check">Check connection</button></div>
+     <div class="hl" id="fin_msg">Tap Check connection after setup.</div>
      <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
    </div>
   </details>`;
+}
+
+/* ---------- Telegram: find the Chat ID automatically ---------- */
+function tgEnhance(){
+  const c=document.getElementById('tgc');if(!c||document.getElementById('tg_find'))return;
+  const d=document.createElement('div');
+  d.innerHTML=`<div class="btns" style="margin-top:8px"><button class="btn small" id="tg_find">Find my Chat ID</button></div>
+  <div class="hint" style="margin-top:6px">1) Create your own bot with @BotFather and paste its token above. 2) Open YOUR bot in Telegram and send it any message (e.g. /start). 3) Tap <b>Find my Chat ID</b> — it fills in the number and sends a test.</div>`;
+  c.insertAdjacentElement('afterend',d);
 }
 
 /* ---------- clicks ---------- */
@@ -451,6 +491,30 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fpaste]')){finAsk();return}
   if(T.id==='fin_copyurl'){copy(S.settings.gasUrl||'','URL copied');return}
   if(T.id==='fin_copyid'){copy(getUserKey(),'ID copied');return}
+  if(T.id==='fin_code'){
+    if(!hasCloud()){flash('Set up Cloud Sync first (paste your Web App URL)');return}
+    copy((S.settings.gasUrl||'').trim()+'\n'+getUserKey(),'Setup code copied — now run “Norie Setup”');return;
+  }
+  if(T.id==='fin_reset'){
+    if(!confirm('Make a brand-new private sync ID for this phone? Your tasks stay on this phone and are uploaded under the new ID. You will need to copy the setup code again.'))return;
+    S.settings.syncId='u'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);save();render();
+    if(getUserKey()!==S.settings.syncId)flash('Update index.html first (see instructions)');else flash('New private sync ID created');return;
+  }
+  if(T.id==='tg_find'){
+    const tok=($('#tgt').value||'').trim(),st=document.getElementById('tgstat');
+    const say=(m,ok)=>{if(!st)return flash(m);st.className='status '+(ok?'ok':'no');st.textContent=m};
+    if(!/^\d{5,}:[\w-]{20,}$/.test(tok)){say('Paste your bot token first (from @BotFather).');return}
+    say('Looking…',true);
+    try{
+      const r=await fetch('https://api.telegram.org/bot'+encodeURIComponent(tok)+'/getUpdates?limit=100'),j=await r.json();
+      if(!j.ok){say(j.error_code===401?'That token isn’t valid — copy it again from @BotFather.':j.error_code===409?'This bot has a webhook set elsewhere — remove it, or type the Chat ID by hand.':'Telegram said: '+(j.description||'error'));return}
+      const ch=[...j.result].reverse().map(u=>(u.message||u.edited_message||u.channel_post||(u.my_chat_member?{chat:u.my_chat_member.chat}:{})).chat).find(c=>c&&c.id);
+      if(!ch){say('No message found yet. Open YOUR bot in Telegram, send it “hi”, then tap this again.');return}
+      $('#tgc').value=String(ch.id);
+      document.getElementById('tgsave').click();
+    }catch(_){say('Couldn’t reach Telegram — check your internet.')}
+    return;
+  }
   if(T.id==='fin_check'){
     const out=document.getElementById('fin_msg');
     if(!hasCloud()){out.textContent='Set up Cloud Sync first (paste your Web App URL).';return}
@@ -527,8 +591,9 @@ css.textContent=`
 `;
 document.head.appendChild(css);
 
-window.finParse=parse;
+window.finParse=parse;window.finIngest=ingest;window.finRepair=repairAll;window.finState=F;
 dedupeAll();
+repairAll();
 render();
 finPull(true);
 })();
