@@ -338,7 +338,9 @@ S.settings.avatar=Object.assign({},defaultState.settings.avatar,S.settings.avata
 
 const isTyping=()=>['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
 const sheetOpen=()=>document.getElementById('sheet').classList.contains('on');
-const getUserKey=()=>((S.settings.name||'yishak').trim()||'yishak').toLowerCase();
+/* Private sync ID: NOT the display name any more (everyone defaulted to "yishak" and shared one cloud file).
+   Existing cloud users keep their old name-based ID; new installs get a random one. */
+const getUserKey=()=>{const s=S.settings;if(!s.syncId){const legacy=((s.name||'yishak').trim()||'yishak').toLowerCase();s.syncId=(s.gasUrl||'').trim()?legacy:'u'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4)}return s.syncId};
 const hasCloud=()=>!!(S.settings.gasUrl||'').trim();
 
 /* Offline-first sync: every change is saved on this phone first and flagged "unsent".
@@ -384,6 +386,7 @@ function mergeStates(a,b){
   settings.avatar=Object.assign({},defaultState.settings.avatar,(w.settings||{}).avatar||{});
   settings.gasUrl=(a.settings||{}).gasUrl||settings.gasUrl;
   settings.name=(a.settings||{}).name||settings.name;
+  settings.syncId=(a.settings||{}).syncId||settings.syncId;
   const draw=(aNew?a:b).draw||(aNew?b:a).draw;
   const out={updatedAt:Math.max(a.updatedAt||0,b.updatedAt||0),lists,tasks,settings,deleted:del,dl};
   if(draw)out.draw=draw;
@@ -2412,6 +2415,6 @@ initNorie();
 if(!fromLink&&S.settings.greet!==false)showHello();
 </script>
 <script src="finance.js"></script>
-  <script src="tasks-clean.js"></script>
+<script src="tasks-clean.js"></script>
 </body>
 </html>
