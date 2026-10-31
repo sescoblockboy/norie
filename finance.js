@@ -77,9 +77,10 @@ const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:25
    SHORTCUT_LINK   : the iCloud link of the "Norie Bank SMS" shortcut (Shortcuts → ••• → Share → Copy iCloud Link). */
 const NORIE_CLOUD_URL='';
 const SHORTCUT_LINK='';
-const SHORTCUT_LINK_PRIVATE='';   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
+const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
+const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
-const SHORTCUT_LINK_READ='';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
+const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
    People who already have a cloud URL stay on Auto; everybody else starts on Private. */
 const isAuto=()=>!!(S.settings.gasUrl||'').trim();
@@ -512,7 +513,8 @@ function setupHTML(){
   const priv=`
      <p><b>Private mode.</b> Your tasks and bank messages never leave this phone. No account, no cloud.</p>
      <ol class="steps">
-       <li>Install the two shortcuts: ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)||'<i>(link not added yet)</i>'} ${btn(SHORTCUT_LINK_READ,'Norie Read Queue',0)||''}</li>
+       <li>Install the three shortcuts: ${btn(SHORTCUT_LINK_MAKE,'Make Queue',0)} ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)} ${btn(SHORTCUT_LINK_READ,'Norie Read Queue',0)}</li>
+       <li>Open <b>Make Queue</b> in the Shortcuts app and tap ▶ once (it creates the file that stores your messages).</li>
        <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.</li>
        <li>In Norie’s Finance tab tap <b>Import new SMS</b> whenever you want your latest messages in.</li>
      </ol>
