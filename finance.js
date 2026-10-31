@@ -411,20 +411,34 @@ function vBank(k){
   <div class="chips fchips">${[['all','All'],['in','In'],['out','Out']].map(([v,n])=>`<button class="chip ${dirF===v?'on':''}" data-fdir="${v}">${n}</button>`).join('')}</div>
   ${listHTML(list)}`;
 }
+let advTab='plan';
+function weekBars(){
+  const f=F(),t0=sod(Date.now()),a=[];
+  for(let i=6;i>=0;i--){const d0=t0-i*DAY;a.push({d:d0,v:f.tx.filter(t=>t.dir==='out'&&t.ts>=d0&&t.ts<d0+DAY).reduce((x,t)=>x+t.amt,0)})}
+  const mx=Math.max(1,...a.map(x=>x.v));
+  return `<div class="fwk">${a.map((x,i)=>`<div class="${i===6?'td':''}"><i style="height:${Math.max(3,Math.round(x.v/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}</small></div>`).join('')}</div>`;
+}
 function vAdvice(){
-  const A=advise();
-  const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${M(ETB(r.amt))} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
-  const top=A.top.length?`<h2>Top spending this month</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
-  return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>
-  <div class="fsub glass"><div class="fspr" style="margin-top:0">
-    <div><small>Spend / day</small><b>${M(ETB0(A.dailyOut))}</b></div>
-    <div><small>Month-end spend</small><b>${M(ETB0(A.projSpend))}</b></div>
-    <div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' d'}</b></div></div>
-    ${A.endBal!=null?`<p class="fcap" style="margin:10px 2px 2px">If no more money comes in, your balance at month end is about <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b> (${A.left} day${A.left===1?'':'s'} left).</p>`:''}</div>
-  <h2>Your 60 / 40 plan</h2>${planHTML(A)}
-  <h2>Advice</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>
-  <h2>Subscriptions</h2>${subCardHTML(A.mIn)}
-  ${rec}${top}
+  const A=advise(),tabs=[['plan','Plan'],['report','Report'],['subs','Subscriptions']];
+  const seg=`<div class="chips fchips fseg">${tabs.map(([k,n])=>`<button class="chip ${advTab===k?'on':''}" data-fadv="${k}">${n}</button>`).join('')}</div>`;
+  let body='';
+  if(advTab==='plan'){
+    body=`${planHTML(A)}
+    <div class="fsub glass"><div class="fspr" style="margin-top:0"><div><small>You spend / day</small><b>${M(ETB0(A.dailyOut))}</b></div><div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' days'}</b></div></div></div>`;
+  }else if(advTab==='report'){
+    const net=A.got-A.spent,sr=A.mIn>0?Math.round((A.mIn-A.mOut)/A.mIn*100):null;
+    const top=A.top.length?`<h2>Where it went</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
+    body=`<div class="fsub glass"><div class="fsh"><b class="lb">This month</b>${sr!=null?`<span class="fpill ${sr<10?'bad':'ok'}">Saving ${sr}%</span>`:''}</div>
+    <div class="fspr" style="margin-top:2px"><div><small>Money in</small><b class="pos">${M(ETB0(A.got))}</b></div><div><small>Money out</small><b class="neg">${M(ETB0(A.spent))}</b></div><div><small>Net</small><b class="${net<0?'neg':'pos'}">${M((net<0?'−':'')+ETB0(Math.abs(net)))}</b></div></div></div>
+    <div class="fsub glass"><div class="fsh"><b class="lb">Spending, last 7 days</b></div>${weekBars()}
+    ${A.endBal!=null?`<p class="fcap" style="margin:8px 2px 2px">At this pace your balance at month end is about <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b>.</p>`:''}</div>
+    ${top}
+    <h2>What to do</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>`;
+  }else{
+    const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${M(ETB(r.amt))} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
+    body=`${subCardHTML(A.mIn)}${rec}`;
+  }
+  return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>${seg}${body}
   <p class="fcap" style="margin:14px 8px 0">Estimates based on your bank SMS — not professional financial advice.</p>`;
 }
 window.vFinance=function(){
@@ -608,6 +622,7 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fsetup]')){e.preventDefault();tab='settings';render();setTimeout(()=>{const d=document.getElementById('finsetup');if(d){d.open=true;d.scrollIntoView({block:'start'})}},60);return}
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const keep=fn=>{const y=scrollY;fn();render();scrollTo(0,y)};
+  const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fsb=T.closest('[data-fsub]');if(fsb){const id=fsb.dataset.fsub;keep(()=>{selSub=selSub===id?null:id});return}
   if(T.closest('[data-fsuball]')){keep(()=>{selSub=null});return}
   if(T.closest('[data-fsubedit]')){const x=F().subs.find(z=>z.id===selSub);if(x)finSubAsk(x);return}
@@ -700,6 +715,9 @@ css.textContent=`
 .fsr.sel{background:rgba(244,104,127,.1);border-radius:12px;padding-left:8px;padding-right:8px;margin:0 -6px}
 .fsel{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 0;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.7)}.fsel small{display:block;font-size:11px;color:var(--muted);font-weight:600}.fsel b{font-size:15px}.fselb{display:flex;gap:6px}
 .fbar{height:8px;border-radius:8px;background:rgba(160,120,100,.18);overflow:hidden;margin:10px 2px 4px}.fbar i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#2f9e6a,var(--gold),var(--pink))}
+.fseg{margin:6px 0 12px}.fseg .chip{flex:1;text-align:center;justify-content:center}
+.fpill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px}.fpill.ok{background:rgba(47,158,106,.14);color:#2f9e6a}.fpill.bad{background:rgba(244,104,127,.14);color:var(--pink)}
+.fwk{display:flex;align-items:flex-end;gap:8px;height:92px;margin:10px 2px 0}.fwk>div{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}.fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.35)}.fwk .td i{background:linear-gradient(180deg,#ff9aab,var(--pink))}.fwk small{font-size:11px;color:var(--muted);font-weight:600}
 .fcap{font-size:12px;color:var(--muted);margin:0 6px 6px}
 .tip{display:flex;gap:10px;padding:11px 14px;font-size:14px;line-height:1.4;position:relative}
 .tip+.tip::before{content:"";position:absolute;top:0;left:32px;right:0;height:1px;background:rgba(160,120,100,.14)}
