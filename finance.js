@@ -17,6 +17,10 @@ function bankOf(from,text){
   const fr=String(from||'').trim(),tx=String(text||'');
   for(const k in BANKS)if(BANKS[k].s.test(fr))return k;
   if(fr&&!/^\+?\d{3,}$/.test(fr)&&OTHER.test(fr))return null;
+  /* each bank's own signature wins (an Awash message can mention "Commercial Bank of Ethiopia" as the sender of the money) */
+  if(/banking with cbe|cbe\.com\.et|mbreciept/i.test(tx))return 'cbe';
+  if(/awash[_ ]?bank|awashbank|call 8980/i.test(tx))return 'awash';
+  if(/telebirr|ethio\s*telecom/i.test(tx))return 'telebirr';
   let best=null,bi=1e9;
   for(const k in BANKS){const i=tx.search(BANKS[k].t);if(i>=0&&i<bi){bi=i;best=k}}
   if(!best)return null;
@@ -50,6 +54,12 @@ function parse(raw,from){
   /* 4) both present: the first one wins */
   if(!dir){const i=txt.search(IN),o=txt.search(OUT);if(i>=0&&(o<0||i<o))dir='in';else if(o>=0)dir='out'}
   if(!dir)return null;
+  if(dir==='out'){   /* what really left the account = amount + service fee + VAT */
+    const tot=txt.match(/\btotal(?:\s+of)?\s+(?:ETB|Birr)\.?\s*([\d,]+(?:\.\d+)?)/i);
+    if(tot&&num(tot[1])>=amt&&num(tot[1])<=amt*1.2+30)amt=num(tot[1]);
+    else{const fee=txt.match(/service\s+(?:fee|charge)\s+(?:is\s+|of\s+)?(?:ETB|Birr)\.?\s*([\d,]+(?:\.\d+)?)/i),vat=txt.match(/VAT[^.]{0,50}?(?:ETB|Birr)\.?\s*([\d,]+(?:\.\d+)?)/i);
+      if(fee&&num(fee[1])<amt)amt=Math.round((amt+num(fee[1])+(vat?num(vat[1]):0))*100)/100}
+  }
   const w=txt.match(/\b(?:to|from)\s+([A-Za-z][A-Za-z0-9 .&'\-]{2,38}?)(?=\s+(?:on|at|with|ETB|Birr|Br|account|acc|Ref|Your|for|using|via)\b|[,.(]|$)/i);
   let who=w?w[1].trim():'';
   if(/^(your|the|my|a|an|account|acc)\b/i.test(who))who='';
@@ -552,9 +562,16 @@ function finAsk(){
 
 /* ---------- Private mode: import the phone's own queue file (no cloud) ---------- */
 function qItems(text){
-  return String(text||'').replace(/\r/g,'').split(/^#####[ \t]*$/m).map(c=>c.trim()).filter(Boolean).map(c=>{
-    const L=c.split('\n'),ts=Date.parse(L[0]),ok=isFinite(ts)&&L.length>=3;
-    return{from:ok?String(L[1]||'').trim():'',text:(ok?L.slice(2):L).join('\n').trim(),ts:ok?ts:0};
+  /* tolerant: works even if the shortcut glued the date, sender and message together */
+  return String(text||'').replace(/\r/g,'').split(/#{5,}/).map(c=>c.trim()).filter(Boolean).map(c=>{
+    let ts=0,from='',body=c;
+    const m=c.match(/^(\d{4}-\d\d-\d\d(?:[T ]\d\d:\d\d(?::\d\d)?(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?)?)\s*/);
+    if(m){const t=Date.parse(m[1].replace(' ','T'));if(isFinite(t)){ts=t;body=c.slice(m[0].length)}}
+    const g=body.match(/^(\+?\d{3,15}|[A-Za-z][A-Za-z0-9_.-]{1,15}?)(?=(?:Dear|Hello|Hi)\b)/);
+    if(g){from=g[1];body=body.slice(g[0].length)}
+    else{const L=body.split('\n'),l0=(L[0]||'').trim();
+      if(L.length>=2&&l0&&l0.length<=30&&!/^(dear|hello|hi)\b/i.test(l0)&&!/\d{1,2}[:\/]\d\d/.test(l0)){from=l0;body=L.slice(1).join('\n')}}
+    return{from,text:body.trim(),ts};
   }).filter(x=>x.text&&SENDER_OK(x.from));
 }
 function finReport(r){
