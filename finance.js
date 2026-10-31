@@ -99,7 +99,7 @@ function setMode(m){
 }
 
 /* ---------- state ---------- */
-const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];return S.fin};
+const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];S.fin.wi=Array.isArray(S.fin.wi)?S.fin.wi:[];return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
 const ETB=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const ETB0=v=>Math.round(Number(v)).toLocaleString('en-US');
@@ -159,6 +159,7 @@ mergeStates=function(a,b){
   const sm=new Map();
   [...(fb.subs||[]),...(fa.subs||[])].forEach(x=>{if(del[x.id])return;const old=sm.get(x.id);if(!old||(x.u||0)>=(old.u||0))sm.set(x.id,x)});
   o.fin={tx:[...m.values()].sort((x,y)=>y.ts-x.ts),del,subs:[...sm.values()].sort((x,y)=>x.id<y.id?-1:1)};
+  {const wm=new Map();[...(fb.wi||[]),...(fa.wi||[])].forEach(x=>{if(!del[x.id])wm.set(x.id,x)});o.fin.wi=[...wm.values()]}
   {const pa=fa.plan,pb=fb.plan,pl=(pa&&(!pb||(pa.u||0)>=(pb.u||0)))?pa:pb;if(pl&&pl.end>Date.now()||pl&&pl.cleared)o.fin.plan=pl}
   return o;
 };
@@ -355,8 +356,9 @@ function planInfo(A){
   const f=F(),B=A.B,now=Date.now(),t0=sod(now);
   let p=f.plan&&f.plan.end>now?f.plan:null;
   const end=p?p.end:planEnd();
-  const total=p?p.total:(B.n?B.tot:null);
-  if(total==null||!(total>0))return null;
+  const base=p?p.total:(B.n?B.tot:null);
+  if(base==null||!(base>0))return null;
+  const wiList=F().wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
   const start=p?p.start:now,spendable=total*.6,reserve=total*.4;
   const out=(from)=>f.tx.filter(t=>t.dir==='out'&&t.ts>=from).reduce((a,t)=>a+t.amt,0);
   const remaining=Math.max(0,spendable-(p?out(start):0));
@@ -364,7 +366,7 @@ function planInfo(A){
   const spentToday=out(Math.max(t0,start));
   const allow=(remaining+spentToday)/daysLeft;
   const lasts=A.dailyOut>0?remaining/A.dailyOut:null;
-  return{saved:!!p,at:p?p.start:null,total,spendable,reserve,remaining,daysLeft,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut};
+  return{saved:!!p,at:p?p.start:null,total,base,wi,wiList,spendable,reserve,remaining,daysLeft,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut};
 }
 function planHTML(A){
   const P=planInfo(A);
@@ -379,9 +381,40 @@ function planHTML(A){
   <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>ETB you can spend per day · next ${P.daysLeft} day${P.daysLeft===1?'':'s'}</small></div>
   <div class="fspr"><div><small>Spend (60%)</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup (40%)</small><b class="pos">${M(ETB0(P.reserve))}</b></div><div><small>Left today</small><b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.leftToday))}</b></div></div>
   <div class="fbar"><i style="width:${usedPct}%"></i></div>
-  <p class="fcap" style="margin:6px 2px 6px">${P.saved?`Saved ${esc(fmtD(P.at))} from a balance of ${M('ETB '+ETB0(P.total))}. ETB ${M(ETB0(P.remaining))} of the 60% is still unspent.`:`Based on your balance right now (${M('ETB '+ETB0(P.total))}). Lock it in to keep the backup saved.`}</p>
+  <p class="fcap" style="margin:6px 2px 6px">${P.saved?`Saved ${esc(fmtD(P.at))} from a balance of ${M('ETB '+ETB0(P.base))}. ETB ${M(ETB0(P.remaining))} of the 60% is still unspent.`:`Based on your balance right now (${M('ETB '+ETB0(P.base))}). Lock it in to keep the backup saved.`}</p>
+  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></div>
+    ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove">×</button></span>`).join('')}</div><p class="fcap" style="margin:4px 2px 0">Pretend money — not in your real balance. Remove it any time.</p>`:`<p class="fcap" style="margin:4px 2px 0">Try an extra amount to see how much more you could spend per day.</p>`}</div>
   ${tip}
   <div class="btns" style="margin:4px 0 6px"><button class="btn main small" data-fplan>${P.saved?'Re-lock with current balance':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div></div>`;
+}
+
+function finWhatIf(){
+  const P=planInfo(advise());if(!P){flash('Import your bank SMS first');return}
+  let o=document.getElementById('finwi');if(o)o.remove();
+  o=document.createElement('div');o.id='finwi';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">What if I earn more?</b>
+  <div class="hint" style="margin:4px 0 0">Pretend amount only. It never touches your real balance and you can remove it later.</div>
+  <label>Extra money (ETB)</label><input id="fw_a" inputmode="decimal" placeholder="e.g. 5000" autocomplete="off">
+  <label>…or: I want to spend this much per day (ETB)</label><input id="fw_d" inputmode="decimal" placeholder="e.g. 800" autocomplete="off">
+  <div class="hl" id="fw_p" style="margin-top:10px">Today you can spend about <b>${M(ETB0(P.allow))}</b> a day.</div>
+  <div class="btns" style="margin-top:14px"><button class="btn small" id="fw_c">Cancel</button><button class="btn main small" id="fw_o">Add</button></div></div>`;
+  document.body.append(o);
+  const A=o.querySelector('#fw_a'),D=o.querySelector('#fw_d'),Pv=o.querySelector('#fw_p');
+  const num=el=>parseFloat(String(el.value).replace(/,/g,''));
+  const prev=()=>{const x=num(A);if(isFinite(x)&&x>0){const add=x*.6/P.daysLeft;Pv.innerHTML=`You could spend about <b>${M(ETB0(P.allow+add))}</b> a day (<b>+${M(ETB0(add))}</b>), and ETB ${M(ETB0(x*.4))} goes to backup.`}else Pv.innerHTML=`Today you can spend about <b>${M(ETB0(P.allow))}</b> a day.`};
+  A.oninput=()=>{D.value='';prev()};
+  D.oninput=()=>{const w=num(D);if(!isFinite(w)||w<=0){A.value='';prev();return}
+    const need=(w*P.daysLeft-(P.remaining+P.spentToday))/.6;
+    if(need<=0){A.value='';Pv.innerHTML='You can already spend that much per day. 🎉'}
+    else{A.value=String(Math.ceil(need));prev();Pv.innerHTML=`To spend ETB <b>${M(ETB0(w))}</b> a day you would need about <b>${M(ETB0(need))}</b> extra over the next ${P.daysLeft} days.`}};
+  o.querySelector('#fw_c').onclick=()=>o.remove();
+  o.onclick=e=>{if(e.target===o)o.remove()};
+  o.querySelector('#fw_o').onclick=()=>{
+    const x=num(A);if(!isFinite(x)||x<=0){A.focus();return}
+    F().wi.push({id:'w'+uid(),amt:Math.round(x*100)/100,u:Date.now()});save();o.remove();render();flash('What-if added — tap × to remove it');
+  };
+  setTimeout(()=>A.focus(),60);
 }
 
 /* ---------- screens ---------- */
@@ -622,6 +655,8 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fsetup]')){e.preventDefault();tab='settings';render();setTimeout(()=>{const d=document.getElementById('finsetup');if(d){d.open=true;d.scrollIntoView({block:'start'})}},60);return}
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const keep=fn=>{const y=scrollY;fn();render();scrollTo(0,y)};
+  if(T.closest('[data-fwi]')){finWhatIf();return}
+  const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fsb=T.closest('[data-fsub]');if(fsb){const id=fsb.dataset.fsub;keep(()=>{selSub=selSub===id?null:id});return}
   if(T.closest('[data-fsuball]')){keep(()=>{selSub=null});return}
@@ -718,6 +753,10 @@ css.textContent=`
 .fseg{margin:6px 0 12px}.fseg .chip{flex:1;text-align:center;justify-content:center}
 .fpill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px}.fpill.ok{background:rgba(47,158,106,.14);color:#2f9e6a}.fpill.bad{background:rgba(244,104,127,.14);color:var(--pink)}
 .fwk{display:flex;align-items:flex-end;gap:8px;height:92px;margin:10px 2px 0}.fwk>div{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}.fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.35)}.fwk .td i{background:linear-gradient(180deg,#ff9aab,var(--pink))}.fwk small{font-size:11px;color:var(--muted);font-weight:600}
+.fwi{margin:8px 0 8px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65);border:1px dashed rgba(200,150,46,.5)}
+.fwih{display:flex;align-items:center;justify-content:space-between}.fwih b{font-size:14px}
+.fwic{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.fwc{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;border-radius:14px;background:rgba(47,158,106,.14);color:#2f9e6a;font-weight:700;font-size:13.5px}
+.fwc button{border:0;background:rgba(47,158,106,.2);color:#2f9e6a;width:22px;height:22px;border-radius:50%;font-size:15px;line-height:1;padding:0;cursor:pointer}
 .fcap{font-size:12px;color:var(--muted);margin:0 6px 6px}
 .tip{display:flex;gap:10px;padding:11px 14px;font-size:14px;line-height:1.4;position:relative}
 .tip+.tip::before{content:"";position:absolute;top:0;left:32px;right:0;height:1px;background:rgba(160,120,100,.14)}
