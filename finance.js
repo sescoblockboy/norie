@@ -534,13 +534,13 @@ function splitMsgs(text,from){
   });
   return out;
 }
-function finAsk(){
+function finAsk(pre){
   let o=document.getElementById('finask');if(o)o.remove();
   o=document.createElement('div');o.id='finask';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
   o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import bank SMS</b>
   <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank and telebirr are accepted — the bank name or its link (e.g. awashbank) anywhere in the message is enough. If a message has neither, pick the bank below.</div>
-  <textarea id="fa_t" style="margin-top:12px;min-height:140px" placeholder="Paste one message or your whole history. Put a blank line between messages."></textarea>
+  <textarea id="fa_t" style="margin-top:12px;min-height:140px" placeholder="Paste one message or your whole history. Put a blank line between messages.">${esc(pre||'')}</textarea>
   <label>Bank</label><select id="fa_b"><option value="">Auto-detect</option>${Object.keys(BANKS).map(k=>`<option value="${BANKS[k].n}">${BANKS[k].n}</option>`).join('')}</select>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Import</button></div></div>`;
   document.body.append(o);
@@ -548,9 +548,10 @@ function finAsk(){
   o.querySelector('#fa_c').onclick=()=>o.remove();
   o.querySelector('#fa_o').onclick=()=>{
     const text=o.querySelector('#fa_t').value,from=o.querySelector('#fa_b').value;
-    const msgs=splitMsgs(text,from);
-    if(!msgs.length)return;
-    const r=ingest(msgs.map(m=>({from,text:m})));
+    const q=/#{5}/.test(text)?qParse(text):null;
+    const msgs=q?[]:splitMsgs(text,from);
+    if(!msgs.length&&!q)return;
+    const r=ingest(q?q.map(m=>({from:from||m.from,text:m.text,ts:m.ts})):msgs.map(m=>({from,text:m})));
     o.remove();
     const bits=[];
     if(r.dup)bits.push(r.dup+' duplicate'+(r.dup>1?'s':'')+' skipped');
@@ -561,7 +562,7 @@ function finAsk(){
 }
 
 /* ---------- Private mode: import the phone's own queue file (no cloud) ---------- */
-function qItems(text){
+function qParse(text){
   /* tolerant: works even if the shortcut glued the date, sender and message together */
   return String(text||'').replace(/\r/g,'').split(/#{5,}/).map(c=>c.trim()).filter(Boolean).map(c=>{
     let ts=0,from='',body=c;
@@ -572,8 +573,9 @@ function qItems(text){
     else{const L=body.split('\n'),l0=(L[0]||'').trim();
       if(L.length>=2&&l0&&l0.length<=30&&!/^(dear|hello|hi)\b/i.test(l0)&&!/\d{1,2}[:\/]\d\d/.test(l0)){from=l0;body=L.slice(1).join('\n')}}
     return{from,text:body.trim(),ts};
-  }).filter(x=>x.text&&SENDER_OK(x.from));
+  }).filter(x=>x.text);
 }
+const qItems=text=>qParse(text).filter(x=>SENDER_OK(x.from));
 function finReport(r){
   const bits=[];
   if(r.dup)bits.push(r.dup+' already had');
@@ -584,8 +586,12 @@ function finReport(r){
 async function finClipImport(){
   let t='';
   try{t=await navigator.clipboard.readText()}catch(_){flash('Paste was blocked — use “Paste SMS” instead');finAsk();return}
-  const items=qItems(t);
-  if(!items.length){flash('No CBE / 127 / Awash messages on the clipboard');return}
+  const all=qParse(t),items=all.filter(x=>SENDER_OK(x.from));
+  if(!items.length){
+    const bad=[...new Set(all.map(x=>x.from||'(no sender)'))].slice(0,3).join(', ');
+    flash(!t.trim()?'The clipboard is empty — Norie Read Queue did not copy anything':all.length?`Clipboard has ${all.length} message${all.length>1?'s':''} but none from CBE / 127 / Awash (senders: ${bad})`:`Clipboard has ${t.length} characters but no messages ending in #####`);
+    finAsk(t);return;
+  }
   finReport(ingest(items));
 }
 function finRunLocal(){
@@ -608,7 +614,7 @@ document.addEventListener('visibilitychange',()=>{
   let w=null;try{w=sessionStorage.getItem('finwait');sessionStorage.removeItem('finwait')}catch(_){}
   if(w&&!isAuto())setTimeout(finReadyAsk,250);
 });
-window.finQItems=qItems;window.finAdvise=advise;window.finPlan=planInfo;window.finClipImport=finClipImport;window.finSetMode=setMode;
+window.finQItems=qItems;window.finQParse=qParse;window.finAdvise=advise;window.finPlan=planInfo;window.finClipImport=finClipImport;window.finSetMode=setMode;
 
 /* ---------- settings: setup card ---------- */
 const _vs=vSettings;
