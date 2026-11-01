@@ -481,8 +481,10 @@ function planHTML(A){
   <div class="fbar"><i style="width:${usedPct}%"></i></div>
   <p class="fcap" style="margin:6px 2px">${P.zero?`Starting from <b>0</b>${P.wi>0?` + ${M(ETB0(P.wi))} what-if = <b>${M(ETB0(P.total))}</b>`:' — add an amount to plan from scratch'}`:P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
   ${tip}
-  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><span style="display:flex;gap:6px"><button class="chip${P.zero?' on':''}" data-fzero>${P.zero?'Use real balance':'Start from 0'}</button><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></span></div>
-    ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove">×</button></span>`).join('')}</div>`:''}</div>
+  <div class="fwi"><div class="fwih"><b>What if I earn more?</b></div>
+    <div class="fwq">${[5000,10000,20000,50000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other…</button></div>
+    ${P.wiList.length?`<div class="fwl">${P.wiList.map(x=>`<div class="fwr"><span>Extra money</span><b class="pos">+${M(ETB0(x.amt))}</b><button class="fwx" data-fwix="${x.id}" aria-label="Remove ${ETB0(x.amt)}">Remove</button></div>`).join('')}</div>`:''}
+    <button class="fz${P.zero?' on':''}" data-fzero><i></i><span>${P.zero?'Starting from 0 · tap to use real balance':'Start from 0 (ignore my balance)'}</span></button></div>
   ${P.zero?'':`<div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div>`}</div>`;
 }
 
@@ -560,8 +562,9 @@ function weekBars(){
   const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i style="height:${Math.max(4,Math.round(sum(x.out)/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
   const xs=f.tx.filter(t=>t.ts>=cur.d&&t.ts<cur.d+DAY&&t.dir==='out'&&isX(t)),items=cur.out.slice().sort((p,q)=>q.ts-p.ts).map(t=>`<div class="fsr" style="cursor:default"><div class="fm"><div class="ft">${esc(t.who||'Money out')}</div><div class="fs">${fmtT(t.ts)}</div></div><div class="fa neg">${M('−'+ETB(t.amt))}</div></div>`).join('');
   const detail=`<div class="fday"><div class="fdh"><b>${esc(dayLabel(cur.d))}</b><span>${new Date(cur.d).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span></div>
-    <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Payments</small><b>${cur.out.length}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div></div>
-    ${items?`<div class="fsl" style="margin-top:4px">${items}</div><div class="fdt"><span>Total</span><b class="neg">${M('−'+ETB(tot))}</b></div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}${xs.length?`<p class="fcap" style="margin:6px 2px 0">Not counted: ${xs.length} own transfer${xs.length>1?'s':''} (${M(ETB0(xs.reduce((a,t)=>a+t.amt,0)))}) between your banks.</p>`:''}</div>`;
+    <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div><div><small>Net</small><b class="${inn-tot<0?'neg':inn-tot>0?'pos':''}">${M((inn-tot<0?'−':inn-tot>0?'+':'')+ETB0(Math.abs(inn-tot)))}</b></div></div>
+    <p class="fcap" style="margin:6px 2px 0">${inn-tot<0?`Net spent today: <b class="neg">${M(ETB(tot-inn))}</b>`:inn-tot>0?`Net gained: <b class="pos">${M(ETB(inn-tot))}</b>`:'Break-even'} · ${cur.out.length} payment${cur.out.length===1?'':'s'}</p>
+    ${items?`<div class="fsl" style="margin-top:4px">${items}</div><div class="fdt"><span>Spent</span><b class="neg">${M('−'+ETB(tot))}</b></div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}${xs.length?`<p class="fcap" style="margin:6px 2px 0">Not counted: ${xs.length} own transfer${xs.length>1?'s':''} (${M(ETB0(xs.reduce((a,t)=>a+t.amt,0)))}) between your banks.</p>`:''}</div>`;
   return bars+detail;
 }
 function vAdvice(){
@@ -784,6 +787,7 @@ $('#app').addEventListener('click',async e=>{
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
+  const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
   if(T.closest('[data-fzero]')){const f=F();f.zero={on:!f.zero.on,u:Date.now()};save();render();flash(f.zero.on?'Starting from 0 — add an amount':'Back to your real balance');return}
   if(T.closest('[data-fpayadd]')){finPayAsk();return}
   const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
@@ -886,6 +890,9 @@ css.textContent=`
 .fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.3)}
 .fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
 .fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
+.fwq{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 2px}.fq{flex:1 1 calc(33% - 7px);min-height:42px;border:0;border-radius:14px;background:rgba(244,104,127,.13);color:var(--pink);font:inherit;font-weight:800;font-size:14px;cursor:pointer}.fq:active{transform:scale(.96)}.fq.oth{background:rgba(255,255,255,.8);color:var(--ink);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.fwl{margin-top:8px;display:grid;gap:6px}.fwr{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;background:rgba(255,255,255,.75);font-size:13.5px}.fwr span{flex:1;color:var(--muted);font-weight:600}.fwr b{font-size:15px}.fwx{min-height:34px;padding:0 12px;border:0;border-radius:11px;background:rgba(244,104,127,.14);color:var(--pink);font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
+.fz{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin-top:8px;padding:0 12px;border:0;border-radius:14px;background:rgba(255,255,255,.7);font:inherit;font-weight:700;font-size:13.5px;color:var(--ink);text-align:left;cursor:pointer}.fz i{width:34px;height:20px;border-radius:12px;background:rgba(0,0,0,.18);position:relative;flex:none;transition:background .2s}.fz i::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}.fz.on i{background:var(--pink)}.fz.on i::after{transform:translateX(14px)}
 .fwp{margin-top:10px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.7);display:grid;gap:5px}.fwp div{display:flex;justify-content:space-between;font-size:13.5px}.fwp span{color:var(--muted);font-weight:600}.fwp u{text-decoration:none;color:var(--pink);font-size:16px}.fwp div:last-child{border-top:1px dashed rgba(0,0,0,.12);padding-top:6px}
 .fdt{display:flex;justify-content:space-between;padding:8px 4px 0;border-top:1px dashed rgba(0,0,0,.14);margin-top:4px;font-size:14px}.fdt span{color:var(--muted);font-weight:700}
 .fday{margin-top:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65)}.fdh{display:flex;justify-content:space-between;align-items:baseline}.fdh b{font-size:15px}.fdh span{font-size:12px;color:var(--muted);font-weight:600}
