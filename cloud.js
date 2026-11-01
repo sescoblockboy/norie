@@ -142,12 +142,12 @@ async function signOut(){
   const h=location.hash||'';
   if(!/access_token=|error_description=|error=/.test(h)&&!/[?&]error_description=/.test(location.search))return;
   const q=new URLSearchParams(h.replace(/^#/,'')||location.search.replace(/^\?/,''));
-  try{history.replaceState(null,'',location.pathname)}catch(_){}
+  try{history.replaceState(null,'',location.pathname);localStorage.removeItem('norie.sb.pend')}catch(_){}
   if(q.get('error_description')||q.get('error')){setTimeout(()=>flash('Sign-in failed: '+(q.get('error_description')||q.get('error'))),400);return}
   if(q.get('access_token')&&q.get('refresh_token')){
     const s=mk({access_token:q.get('access_token'),refresh_token:q.get('refresh_token'),expires_in:q.get('expires_in')});
     /* iPhone web page in Safari: the Home Screen app has separate storage, so offer to hand the sign-in over */
-    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&!isStandalone())setTimeout(()=>showHandoff(s),300);
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&!isStandalone()){try{localStorage.setItem('norie.sb.hand',JSON.stringify({rt:s.refresh_token,t:Date.now()}))}catch(_){}setTimeout(()=>showHandoff(s),300)}
     else setTimeout(()=>finishLogin(s,'google'),200);
   }
 })();
@@ -155,10 +155,17 @@ async function signOut(){
 /* link from the Home Screen app: ?signin=1 opened in Safari starts Google sign-in straight away */
 if(/[?&]signin=1/.test(location.search)&&!isStandalone()){try{history.replaceState(null,'',location.pathname)}catch(_){}setTimeout(googleSignIn,300)}
 
+/* Safari: if the hand-off box was closed too soon, bring it back (code stays for 15 minutes) */
+setTimeout(()=>{
+  if(isStandalone()||ses||document.getElementById('sbhand'))return;
+  let h=null;try{h=JSON.parse(localStorage.getItem('norie.sb.hand')||'null')}catch(_){}
+  if(h&&h.rt&&Date.now()-h.t<15*60000)showHandoff({refresh_token:h.rt});
+},900);
+
 /* if we left for Google and came back with no sign-in, say why instead of silently doing nothing */
 setTimeout(()=>{
   let pend=0;try{pend=+localStorage.getItem('norie.sb.pend')||0;localStorage.removeItem('norie.sb.pend')}catch(_){}
-  if(!pend||Date.now()-pend>15*60000||ses)return;
+  if(!pend||Date.now()-pend>15*60000||ses||document.getElementById('sbhand'))return;
   const o=overlay('sbwhy',`<b style="font-size:18px">Google sent you back, but you’re not signed in</b>
    <div class="hint" style="margin:8px 0 10px">This normally means one of these:<br>
    • Your Google account is not a <b>test user</b> (or the app is not published).<br>
@@ -213,13 +220,13 @@ function showHandoff(s){
    <div class="btns" style="margin:0 0 10px"><button class="btn main" id="sh_app" style="width:100%">I use the Home Screen app</button></div>
    <div class="hint" style="margin:0 0 12px">Copies a one-time code. Then open Norie from your Home Screen → Settings → Account → Sign in → <b>Paste &amp; sign in</b>.</div>
    <div class="btns" style="margin:0"><button class="btn" id="sh_here" style="width:100%">Use Norie here in Safari</button></div>`);
-  o.onclick=null;
+  o.addEventListener('click',e=>{if(e.target===o)e.stopImmediatePropagation()},true);   /* tapping outside must not close this box */
   o.querySelector('#sh_app').onclick=async()=>{
     try{await navigator.clipboard.writeText(s.refresh_token);o.remove();flash('Code copied — now open Norie from your Home Screen')}
     catch(_){o.querySelector('.hint').innerHTML='Copy failed. Select this code and copy it, then paste it in the Home Screen app:<div class="hl" style="word-break:break-all;font-size:12px;margin-top:8px">'+esc(s.refresh_token)+'</div>'}
     /* this tab is only a go-between: it keeps no sign-in, so it can never invalidate the app's session */
   };
-  o.querySelector('#sh_here').onclick=()=>{o.remove();finishLogin(s,'google')};
+  o.querySelector('#sh_here').onclick=()=>{o.remove();try{localStorage.removeItem('norie.sb.hand')}catch(_){}finishLogin(s,'google')};
 }
 function showCode(){
   if(!ses)return;
