@@ -215,9 +215,33 @@ async function toggleHide(){
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&!hide){lockNow();if(tab==='finance')render()}});
 Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6'),eyeOff:_p('M9.88 9.88a3 3 0 1 0 4.24 4.24','M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68','M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61','M2 2l20 20')});
 if(!ICONS.eye)ICONS.eye=_p('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z')+'<circle cx="12" cy="12" r="3"/>';
+/* a payment out of one of your banks that lands in another of your banks (same amount, within 15 min)
+   is MOVING money, not spending or earning it, so it is left out of spending / income totals */
+let _xk=null,_xs=null;
+function xferSet(){
+  const f=F(),k=f.tx.length+'|'+(f.tx[0]&&f.tx[0].id)+'|'+(f.tx[f.tx.length-1]&&f.tx[f.tx.length-1].id);
+  if(_xk===k&&_xs)return _xs;
+  const set=new Set(),ins=f.tx.filter(t=>t.dir==='in'),used=new Set();
+  f.tx.filter(t=>t.dir==='out').forEach(o=>{
+    const m=ins.find(i=>!used.has(i.id)&&i.bank!==o.bank&&Math.abs(i.ts-o.ts)<=15*60000&&i.amt<=o.amt+.005&&o.amt-i.amt<=Math.min(60,o.amt*.1));
+    if(m){used.add(m.id);set.add(o.id);set.add(m.id)}
+  });
+  _xk=k;_xs=set;return set;
+}
+const isX=t=>xferSet().has(t.id);
 const mstart=()=>{const d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.getTime()};
-function stats(list){const m=mstart();let i=0,o=0;list.forEach(t=>{if(t.ts>=m){t.dir==='in'?i+=t.amt:o+=t.amt}});return{i,o}}
-const latestBal=l=>{const t=l.find(x=>x.bal!=null);return t?t.bal:null};
+function stats(list){const m=mstart();let i=0,o=0;list.forEach(t=>{if(t.ts>=m&&!isX(t)){t.dir==='in'?i+=t.amt:o+=t.amt}});return{i,o}}
+/* newest balance; if several messages share the newest minute, take the one no other message leads up to */
+const latestBal=l=>{
+  const a=l.filter(x=>x.bal!=null);if(!a.length)return null;
+  const top=a.filter(x=>Math.abs(x.ts-a[0].ts)<=60000);
+  if(top.length>1){
+    const prevOf=y=>y.dir==='in'?y.bal-y.amt:y.bal+y.amt;
+    const last=top.find(x=>!top.some(y=>y!==x&&Math.abs(prevOf(y)-x.bal)<.02));
+    if(last)return last.bal;
+  }
+  return a[0].bal;
+};
 function banksBal(){
   const f=F(),per={};let tot=0,n=0;
   for(const k in BANKS){const b=latestBal(f.tx.filter(t=>t.bank===k));per[k]=b;if(b!=null){tot+=b;n++}}
@@ -229,8 +253,8 @@ const backBtn=(to,label)=>`<div class="ftop"><button class="fback" data-fgo="${t
 /* ---------- rows ---------- */
 function rowF(t){
   return `<div class="frow" data-ftx="${t.id}"><div class="fic ${t.dir}">${ic(t.dir==='in'?'arrowDown':'arrowUp',16)}</div>
-  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${fmtT(t.ts)}${t.bal!=null?' · Bal '+M(ETB(t.bal)):''}</div></div>
-  <div class="fa ${t.dir==='in'?'pos':'neg'}">${M((t.dir==='in'?'+':'−')+ETB(t.amt))}</div></div>`;
+  <div class="fm"><div class="ft">${esc(t.who||(t.dir==='in'?'Money in':'Money out'))}</div><div class="fs">${isX(t)?'Own transfer · ':''}${fmtT(t.ts)}${t.bal!=null?' · Bal '+M(ETB(t.bal)):''}</div></div>
+  <div class="fa ${isX(t)?'':t.dir==='in'?'pos':'neg'}">${M((t.dir==='in'?'+':'−')+ETB(t.amt))}</div></div>`;
 }
 function listHTML(list){
   if(!list.length)return`<div class="empty glass">${ic('dollar',24)}<div style="margin-top:6px">No transactions here.</div></div>`;
@@ -273,7 +297,7 @@ const payTot=()=>F().pay.reduce((a,p)=>a+payMo(p),0);
 function payCardHTML(A){
   const pay=F().pay,m=payTot(),sm=F().subs.reduce((a,s)=>a+perMo(s),0);
   const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Payroll &amp; salary</b><button class="chip on" data-fpayadd>+ Add</button></div>`;
-  if(!pay.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add your salary or any regular pay — weekly, monthly or yearly — and Norie forecasts your income for 1 month, 6 months and a year.</p></div>`;
+  if(!pay.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add salary or regular pay to forecast 1 month, 6 months and 1 year.</p></div>`;
   const v=(x)=>`<b class="${x<0?'neg':''}">${M((x<0?'−':'')+ETB0(Math.abs(x)))}</b>`;
   const rows=[['Income',m],['After subscriptions',m-sm]];
   if(A&&A.enough&&A.mOut>0)rows.push(['At your usual spending',m-A.mOut]);
@@ -311,19 +335,17 @@ function finPayAsk(pay){
 }
 
 /* ---------- subscriptions ---------- */
-const PER={week:['Weekly',52/12],month:['Monthly',1],year:['Yearly',1/12]};
+const PER={day:['Daily',365/12],week:['Weekly',52/12],month:['Monthly',1],year:['Yearly',1/12]};
 const perMo=s=>s.amt*(PER[s.per]||PER.month)[1];
 let selSub=null;
 function subCardHTML(income){
   const subs=F().subs,m=subs.reduce((a,s)=>a+perMo(s),0);
   const sel=selSub?subs.find(x=>x.id===selSub):null;if(selSub&&!sel)selSub=null;
   const head=`<div class="fsh"><b class="lb">${ic('repeat',16)}Subscriptions</b><button class="chip on" data-fsubadd>+ Add</button></div>`;
-  if(!subs.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add what you pay for regularly and see the cost over 1 month, 6 months and a year.</p></div>`;
+  if(!subs.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add what you pay regularly to see its daily, monthly and yearly cost.</p></div>`;
   const v=sel?perMo(sel):m,pct=income>0?Math.round(v/income*100):null,share=m>0?Math.round(perMo(sel||{amt:0,per:'month'})/m*100):0;
   const who=sel?`<div class="fsel"><div><small>Showing only</small><b>${esc(sel.name)}</b></div><div class="fselb"><button class="chip" data-fsubedit>Edit</button><button class="chip on" data-fsuball>Show all</button></div></div>`:'';
-  const cap=sel
-    ?`<p class="fcap" style="margin:8px 2px 4px">${PER[sel.per][0]} bill of ${M('ETB '+ETB(sel.amt))}${sel.per==='month'?'':' ≈ '+M(ETB(v))+' / month'}. ${subs.length>1?`It is <b>${share}%</b> of all your subscriptions`:''}${pct!=null?`${subs.length>1?' and ':'It is '}<b class="neg">${pct}%</b> of your monthly income`:''}.</p>`
-    :(pct!=null?`<p class="fcap" style="margin:8px 2px 4px">About <b class="neg">${pct}%</b> of your monthly income. <span style="opacity:.8">Tap a subscription to see just that one.</span></p>`:`<p class="fcap" style="margin:8px 2px 4px">Tap a subscription to see just that one.</p>`);
+  const cap=pct!=null?`<p class="fcap" style="margin:8px 2px 4px"><b class="neg">${pct}%</b> of monthly income${sel&&subs.length>1?` · ${share}% of subscriptions`:''}</p>`:'';
   return `<div class="fsub glass">${head}${who}
   <div class="fsbig"><b class="neg">${M('−'+ETB(v))}</b><small>ETB every month${sel?' · '+esc(sel.name):' · all'}</small></div>
   <div class="fspr f4"><div><small>Per day</small><b>${M(ETB(v*12/365))}</b></div><div><small>1 month</small><b>${M(ETB0(v))}</b></div><div><small>6 months</small><b>${M(ETB0(v*6))}</b></div><div><small>1 year</small><b>${M(ETB0(v*12))}</b></div></div>
@@ -361,7 +383,7 @@ const MED=a=>{const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2
 const norm=w=>String(w||'').toLowerCase().replace(/[^a-z]+/g,' ').trim();
 function detectRec(f){
   const t0=sod(Date.now()),g=new Map();
-  f.tx.filter(t=>t.dir==='out'&&t.who&&t.ts>=t0-130*DAY).forEach(t=>{const k=norm(t.who);if(k.length<3)return;(g.get(k)||g.set(k,[]).get(k)).push(t)});
+  f.tx.filter(t=>t.dir==='out'&&!isX(t)&&t.who&&t.ts>=t0-130*DAY).forEach(t=>{const k=norm(t.who);if(k.length<3)return;(g.get(k)||g.set(k,[]).get(k)).push(t)});
   const have=f.subs.map(s=>norm(s.name)),out=[];
   g.forEach((a,k)=>{
     if(a.length<2||have.some(h=>h&&(h.includes(k)||k.includes(h))))return;
@@ -379,7 +401,7 @@ function advise(){
   const f=F(),now=Date.now(),t0=sod(now),B=banksBal(),d=new Date();
   const dim=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(),left=dim-d.getDate();
   const ms=mstart(),pms=new Date(d.getFullYear(),d.getMonth()-1,1).getTime();
-  const sum=(l,dir)=>l.filter(t=>t.dir===dir).reduce((a,t)=>a+t.amt,0);
+  const sum=(l,dir)=>l.filter(t=>t.dir===dir&&!isX(t)).reduce((a,t)=>a+t.amt,0);
   const first=f.tx.length?f.tx[f.tx.length-1].ts:now;
   const span=Math.max(1,Math.ceil((t0+DAY-sod(first))/DAY));
   const win=Math.min(30,span),l30=f.tx.filter(t=>t.ts>=t0+DAY-win*DAY);
@@ -395,33 +417,33 @@ function advise(){
   const endBal=B.n?B.tot-dailyOut*left:null;
   const sm=f.subs.reduce((a,s)=>a+perMo(s),0),subPct=mIn>0?sm/mIn:null;
   const rec=detectRec(f);lastRec=rec;
-  const pay=new Map();cur.filter(t=>t.dir==='out').forEach(t=>{const k=t.who||'Other';pay.set(k,(pay.get(k)||0)+t.amt)});
+  const pay=new Map();cur.filter(t=>t.dir==='out'&&!isX(t)).forEach(t=>{const k=t.who||'Other';pay.set(k,(pay.get(k)||0)+t.amt)});
   const top=[...pay].sort((a,b)=>b[1]-a[1]).slice(0,3);
   const enough=f.tx.length>=5&&span>=7;
   const tips=[];
-  if(!enough)tips.push(['info','Not much history yet — import more SMS (a few weeks) and these forecasts get a lot more accurate.']);
+  if(!enough)tips.push(['info','Import a few weeks of SMS for better forecasts.']);
   else{
     if(runway!=null){
-      if(runway<10)tips.push(['warn',`At your recent pace your balance lasts about ${Math.floor(runway)} days. Cut non-essential spending until your next income.`]);
-      else if(runway<30)tips.push(['info',`Your balance covers roughly ${Math.floor(runway)} days at the current pace — fine, but keep an eye on it.`]);
-      else tips.push(['good',`Your balance covers about ${Math.floor(runway)} days of spending. Comfortable cushion.`]);
+      if(runway<10)tips.push(['warn',`Balance lasts ~${Math.floor(runway)} days at this pace. Cut extras.`]);
+      else if(runway<30)tips.push(['info',`Balance lasts ~${Math.floor(runway)} days at this pace.`]);
+      else tips.push(['good',`Balance lasts ~${Math.floor(runway)} days. Comfortable.`]);
     }
     if(save_!=null){
-      if(save_<0)tips.push(['warn',`You are spending more than you receive (about ETB ${ETB0(mOut-mIn)} more per month). That drains your balance.`]);
-      else if(save_<.1)tips.push(['info',`You keep only ~${Math.round(save_*100)}% of what comes in. Aim for 10–20% — even a small fixed amount set aside on payday helps.`]);
-      else tips.push(['good',`You keep ~${Math.round(save_*100)}% of your income. Move part of it somewhere you won’t spend it.`]);
+      if(save_<0)tips.push(['warn',`You spend ~ETB ${ETB0(mOut-mIn)} more than you earn each month.`]);
+      else if(save_<.1)tips.push(['info',`You keep ~${Math.round(save_*100)}% of income. Aim for 10–20%.`]);
+      else tips.push(['good',`You keep ~${Math.round(save_*100)}% of income. Nice.`]);
     }
-    if(chg!=null&&chg>.2)tips.push(['warn',`Spending is up ${Math.round(chg*100)}% compared with the same point last month.`]);
-    else if(chg!=null&&chg<-.1)tips.push(['good',`Spending is down ${Math.round(-chg*100)}% compared with the same point last month. Nice.`]);
+    if(chg!=null&&chg>.2)tips.push(['warn',`Spending is up ${Math.round(chg*100)}% vs. this point last month.`]);
+    else if(chg!=null&&chg<-.1)tips.push(['good',`Spending is down ${Math.round(-chg*100)}% vs. this point last month.`]);
     if(top.length&&spent>0&&top[0][1]/spent>.35&&top[0][0]!=='Other')tips.push(['info',`${Math.round(top[0][1]/spent*100)}% of this month’s spending went to ${top[0][0]}.`]);
   }
   if(f.subs.length){
     const big=f.subs.slice().sort((a,b)=>perMo(b)-perMo(a))[0];
-    if(subPct!=null&&subPct>.15)tips.push(['warn',`Subscriptions take ~${Math.round(subPct*100)}% of your income. Review them — cancel what you haven’t used this month.`]);
-    else if(subPct!=null&&subPct>.08)tips.push(['info',`Subscriptions take ~${Math.round(subPct*100)}% of your income. Worth a quick review.`]);
-    tips.push(['info',`Biggest subscription: ${big.name} — ETB ${ETB0(perMo(big)*12)} a year. Is it still worth it?`]);
+    if(subPct!=null&&subPct>.15)tips.push(['warn',`Subscriptions take ~${Math.round(subPct*100)}% of income.`]);
+    else if(subPct!=null&&subPct>.08)tips.push(['info',`Subscriptions take ~${Math.round(subPct*100)}% of income.`]);
+    tips.push(['info',`Biggest subscription: ${big.name}, ETB ${ETB0(perMo(big)*12)}/year.`]);
   }
-  if(rec.length)tips.push(['info',`${rec.length} payment${rec.length>1?'s look':' looks'} recurring but ${rec.length>1?'aren’t':'isn’t'} in your subscriptions — see “Looks recurring” below.`]);
+  if(rec.length)tips.push(['info',`${rec.length} possible subscription${rec.length>1?'s':''} found — see Subscriptions.`]);
   return{B,dailyOut,spent,got,projSpend,runway,endBal,mIn,mOut,sm,rec,top,tips,left,subPct,enough};
 }
 
@@ -436,7 +458,7 @@ function planInfo(A){
   if(base==null||!(base>0))return null;
   const wiList=F().wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
   const start=p?p.start:now,spendable=total*.6,reserve=total*.4;
-  const out=(from)=>f.tx.filter(t=>t.dir==='out'&&t.ts>=from).reduce((a,t)=>a+t.amt,0);
+  const out=(from)=>f.tx.filter(t=>t.dir==='out'&&!isX(t)&&t.ts>=from).reduce((a,t)=>a+t.amt,0);
   const remaining=Math.max(0,spendable-(p?out(start):0));
   const daysLeft=Math.max(1,Math.ceil((end-now)/DAY));
   const spentToday=out(Math.max(t0,start));
@@ -446,22 +468,20 @@ function planInfo(A){
 }
 function planHTML(A){
   const P=planInfo(A);
-  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Spending plan · 60 / 40</b></div>`;
-  if(!P)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Import your bank SMS so Norie knows your balance, then it will split it: 60% to spend day by day, 40% kept as backup.</p></div>`;
-  const over=P.pace>P.allow&&P.pace>0,tip=P.pace>0
-    ?(over?`<div class="tip warn"><i></i><span>${esc(MT(`Your usual pace is about ETB ${ETB0(P.pace)} a day — above this budget. At that pace the 60% lasts about ${Math.floor(P.lasts)} day${Math.floor(P.lasts)===1?'':'s'}, not until month end. Try to stay near ETB ${ETB0(P.allow)}.`))}</span></div>`
-     :`<div class="tip good"><i></i><span>${esc(MT(`Your usual pace (about ETB ${ETB0(P.pace)} a day) fits inside this budget. Keep it up.`))}</span></div>`)
-    :'';
+  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Spending plan</b><span class="fpill ok">60 / 40</span></div>`;
+  if(!P)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Import your bank SMS to get your daily budget.</p></div>`;
+  const over=P.pace>P.allow&&P.pace>0;
+  const tip=P.pace>0?`<div class="tip ${over?'warn':'good'}"><i></i><span>${esc(MT(over?`Your usual ETB ${ETB0(P.pace)}/day is above budget — the 60% lasts ${Math.floor(P.lasts)} day${Math.floor(P.lasts)===1?'':'s'}.`:`Your usual ETB ${ETB0(P.pace)}/day fits the budget.`))}</span></div>`:'';
   const usedPct=Math.max(0,Math.min(100,Math.round((1-(P.spendable?P.remaining/P.spendable:0))*100)));
   return `<div class="fsub glass">${head}
-  <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>ETB you can spend per day · next ${P.daysLeft} day${P.daysLeft===1?'':'s'}</small></div>
-  <div class="fspr"><div><small>Spend (60%)</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup (40%)</small><b class="pos">${M(ETB0(P.reserve))}</b></div><div><small>Left today</small><b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.leftToday))}</b></div></div>
+  <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>ETB per day · ${P.daysLeft} days</small></div>
+  <div class="fspr"><div><small>Spend 60%</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup 40%</small><b class="pos">${M(ETB0(P.reserve))}</b></div><div><small>Left today</small><b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.leftToday))}</b></div></div>
   <div class="fbar"><i style="width:${usedPct}%"></i></div>
-  <p class="fcap" style="margin:6px 2px 6px">${P.saved?`Saved ${esc(fmtD(P.at))} from a balance of ${M('ETB '+ETB0(P.base))}. ETB ${M(ETB0(P.remaining))} of the 60% is still unspent.`:`Based on your balance right now (${M('ETB '+ETB0(P.base))}). Lock it in to keep the backup saved.`}</p>
-  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></div>
-    ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove">×</button></span>`).join('')}</div><p class="fcap" style="margin:4px 2px 0">Pretend money — not in your real balance. Remove it any time.</p>`:`<p class="fcap" style="margin:4px 2px 0">Try an extra amount to see how much more you could spend per day.</p>`}</div>
+  <p class="fcap" style="margin:6px 2px">${P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
   ${tip}
-  <div class="btns" style="margin:4px 0 6px"><button class="btn main small" data-fplan>${P.saved?'Re-lock with current balance':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div></div>`;
+  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></div>
+    ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove">×</button></span>`).join('')}</div>`:''}</div>
+  <div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div></div>`;
 }
 
 function finWhatIf(){
@@ -470,21 +490,27 @@ function finWhatIf(){
   o=document.createElement('div');o.id='finwi';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
   o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">What if I earn more?</b>
-  <div class="hint" style="margin:4px 0 0">Pretend amount only. It never touches your real balance and you can remove it later.</div>
+  <div class="hint" style="margin:4px 0 0">Pretend money: added to your balance for planning only. Remove it any time.</div>
   <label>Extra money (ETB)</label><input id="fw_a" inputmode="decimal" placeholder="e.g. 5000" autocomplete="off">
   <label>…or: I want to spend this much per day (ETB)</label><input id="fw_d" inputmode="decimal" placeholder="e.g. 800" autocomplete="off">
-  <div class="hl" id="fw_p" style="margin-top:10px">Today you can spend about <b>${M(ETB0(P.allow))}</b> a day.</div>
+  <div class="fwp" id="fw_p"></div>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fw_c">Cancel</button><button class="btn main small" id="fw_o">Add</button></div></div>`;
   document.body.append(o);
   const A=o.querySelector('#fw_a'),D=o.querySelector('#fw_d'),Pv=o.querySelector('#fw_p');
   commaIn(A);commaIn(D);
   const num=el=>parseFloat(String(el.value).replace(/,/g,''));
-  const prev=()=>{const x=num(A);if(isFinite(x)&&x>0){const add=x*.6/P.daysLeft;Pv.innerHTML=`You could spend about <b>${M(ETB0(P.allow+add))}</b> a day (<b>+${M(ETB0(add))}</b>), and ETB ${M(ETB0(x*.4))} goes to backup.`}else Pv.innerHTML=`Today you can spend about <b>${M(ETB0(P.allow))}</b> a day.`};
+  const row=(n,v,c)=>`<div><span>${n}</span><b class="${c||''}">${v}</b></div>`;
+  const prev=()=>{
+    const x=num(A),ok=isFinite(x)&&x>0,add=ok?x:0,tot=P.total+add,sp=tot*.6,rem=P.remaining+add*.6,day=(rem+P.spentToday)/P.daysLeft;
+    Pv.innerHTML=row('Balance now',M(ETB0(P.total)))+(ok?row('Extra','+'+M(ETB0(add)),'pos')+row('New total',M(ETB0(tot))):'')+
+      row('Spend 60%',M(ETB0(sp)))+row('Backup 40%',M(ETB0(tot*.4)),'pos')+row('Per day · '+P.daysLeft+' days','<u>'+M(ETB0(day))+'</u>');
+  };
+  prev();
   A.oninput=()=>{D.value='';prev()};
   D.oninput=()=>{const w=num(D);if(!isFinite(w)||w<=0){A.value='';prev();return}
     const need=(w*P.daysLeft-(P.remaining+P.spentToday))/.6;
-    if(need<=0){A.value='';Pv.innerHTML='You can already spend that much per day. 🎉'}
-    else{A.value=fmtIn(Math.ceil(need));prev();Pv.innerHTML=`To spend ETB <b>${M(ETB0(w))}</b> a day you would need about <b>${M(ETB0(need))}</b> extra over the next ${P.daysLeft} days.`}};
+    if(need<=0){A.value='';prev()}
+    else{A.value=fmtIn(Math.ceil(need));prev()}};
   o.querySelector('#fw_c').onclick=()=>o.remove();
   o.onclick=e=>{if(e.target===o)o.remove()};
   o.querySelector('#fw_o').onclick=()=>{
@@ -525,7 +551,7 @@ let advTab='plan';
 let repDay=null;
 function weekBars(){
   const f=F(),t0=sod(Date.now()),a=[];
-  for(let i=6;i>=0;i--){const d0=t0-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY);a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
+  for(let i=6;i>=0;i--){const d0=t0-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY&&!isX(t));a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
   const sel=(repDay!=null&&repDay>=t0-6*DAY&&repDay<=t0)?repDay:t0;
   const sum=l=>l.reduce((x,t)=>x+t.amt,0),mx=Math.max(1,...a.map(x=>sum(x.out)));
   const cur=a.find(x=>x.d===sel)||a[6],tot=sum(cur.out),inn=sum(cur.inn);
@@ -541,23 +567,22 @@ function vAdvice(){
   const seg=`<div class="chips fchips fseg">${tabs.map(([k,n])=>`<button class="chip ${advTab===k?'on':''}" data-fadv="${k}">${n}</button>`).join('')}</div>`;
   let body='';
   if(advTab==='plan'){
-    body=`${planHTML(A)}${payCardHTML(A)}
-    <div class="fsub glass"><div class="fspr" style="margin-top:0"><div><small>You spend / day</small><b>${M(ETB0(A.dailyOut))}</b></div><div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' days'}</b></div></div></div>`;
+    body=`${planHTML(A)}${payCardHTML(A)}`;
   }else if(advTab==='report'){
     const net=A.got-A.spent,sr=A.mIn>0?Math.round((A.mIn-A.mOut)/A.mIn*100):null;
-    const top=A.top.length?`<h2>Where it went</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
+    const top=A.top.length?`<h2>Top spending</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
     body=`<div class="fsub glass"><div class="fsh"><b class="lb">This month</b>${sr!=null?`<span class="fpill ${sr<10?'bad':'ok'}">Saving ${sr}%</span>`:''}</div>
     <div class="fspr" style="margin-top:2px"><div><small>Money in</small><b class="pos">${M(ETB0(A.got))}</b></div><div><small>Money out</small><b class="neg">${M(ETB0(A.spent))}</b></div><div><small>Net</small><b class="${net<0?'neg':'pos'}">${M((net<0?'−':'')+ETB0(Math.abs(net)))}</b></div></div></div>
-    <div class="fsub glass"><div class="fsh"><b class="lb">Spending, last 7 days</b></div><p class="fcap" style="margin:2px 2px 0">Tap a day to see what you spent.</p>${weekBars()}
-    ${A.endBal!=null?`<p class="fcap" style="margin:8px 2px 2px">At this pace your balance at month end is about <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b>.</p>`:''}</div>
+    <div class="fsub glass"><div class="fsh"><b class="lb">Last 7 days</b><small class="fcap" style="margin:0">tap a day</small></div>${weekBars()}
+    ${A.endBal!=null?`<p class="fcap" style="margin:8px 2px 2px">Month-end balance at this pace: <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b></p>`:''}</div>
     ${top}
-    <h2>What to do</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>`;
+    <div class="card glass" style="margin-top:12px">${A.tips.slice(0,3).map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>`;
   }else{
     const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${M(ETB(r.amt))} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
     body=`${subCardHTML(payTot()>0?payTot():A.mIn)}${rec}`;
   }
-  return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>${seg}${body}
-  <p class="fcap" style="margin:14px 8px 0">Estimates based on your bank SMS — not professional financial advice.</p>`;
+  return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Plan · report · subscriptions</p>${seg}${body}
+  <p class="fcap" style="margin:12px 8px 0;text-align:center">Estimates from your SMS, not financial advice.</p>`;
 }
 window.vFinance=function(){
   if(mode==='advice')return vAdvice();
@@ -858,6 +883,7 @@ css.textContent=`
 .fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.3)}
 .fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
 .fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
+.fwp{margin-top:10px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.7);display:grid;gap:5px}.fwp div{display:flex;justify-content:space-between;font-size:13.5px}.fwp span{color:var(--muted);font-weight:600}.fwp u{text-decoration:none;color:var(--pink);font-size:16px}.fwp div:last-child{border-top:1px dashed rgba(0,0,0,.12);padding-top:6px}
 .fday{margin-top:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65)}.fdh{display:flex;justify-content:space-between;align-items:baseline}.fdh b{font-size:15px}.fdh span{font-size:12px;color:var(--muted);font-weight:600}
 .fspr.f4 b{font-size:13.5px}.fspr.f4>div{padding-left:2px;padding-right:2px}
 .fpt{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:7px 6px;font-size:12px;align-items:center;margin:8px 0 6px}.fpt i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);text-align:right}.fpt span{color:var(--muted);font-weight:600;font-size:12px}.fpt b{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
