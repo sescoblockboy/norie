@@ -906,7 +906,7 @@ async function addToCalendar(t){
   download(name+'.ics',ics,'text/calendar;charset=utf-8');
 }
 function openFromHash(){
-  const m=location.hash.match(/t=([\w-]+)/);if(!m)return false;
+  const m=location.hash.match(/(?:^#|&)t=([\w-]+)/);if(!m)return false;   /* only #t=ID — NOT things like expires_at= in a Google sign-in return */
   const t=S.tasks.find(x=>x.id===m[1]);
   history.replaceState(null,'',location.pathname+location.search);
   if(!t)return false;
