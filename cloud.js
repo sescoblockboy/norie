@@ -112,7 +112,6 @@ async function finishLogin(session,source){
   flash('Signed in'+(ses.email?' as '+ses.email:''));
   try{await loadFromGas(true)}catch(_){}
   paintAcct();
-  if(source==='google'&&!isStandalone())showCode();
 }
 const isStandalone=()=>{try{return navigator.standalone===true||matchMedia('(display-mode: standalone)').matches}catch(_){return false}};
 
@@ -145,7 +144,10 @@ async function signOut(){
   try{history.replaceState(null,'',location.pathname)}catch(_){}
   if(q.get('error_description')||q.get('error')){setTimeout(()=>flash('Sign-in failed: '+(q.get('error_description')||q.get('error'))),400);return}
   if(q.get('access_token')&&q.get('refresh_token')){
-    setTimeout(()=>finishLogin(mk({access_token:q.get('access_token'),refresh_token:q.get('refresh_token'),expires_in:q.get('expires_in')}),'google'),200);
+    const s=mk({access_token:q.get('access_token'),refresh_token:q.get('refresh_token'),expires_in:q.get('expires_in')});
+    /* iPhone web page in Safari: the Home Screen app has separate storage, so offer to hand the sign-in over */
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&!isStandalone())setTimeout(()=>showHandoff(s),300);
+    else setTimeout(()=>finishLogin(s,'google'),200);
   }
 })();
 
@@ -163,12 +165,31 @@ function openSignIn(){
   const o=overlay('sbsign',`<b style="font-size:18px">Sign in to Norie</b>
    <div class="hint" style="margin:6px 0 12px">Your tasks sync between devices, Telegram reminders keep working when the app is closed, and bank messages arrive by themselves. Only you can see your data.</div>
    <div class="btns" style="margin:0"><button class="btn main" id="sb_g" style="width:100%">Sign in with Google</button></div>
-   <div class="hint" style="margin:14px 0 4px"><b>Using Norie from your Home Screen?</b> If Google doesn’t come back to the app, sign in on the Norie web page in Safari, tap <b>Copy sign-in code</b>, then paste it here:</div>
-   <input id="sb_c" placeholder="Paste sign-in code" autocomplete="off" autocapitalize="off" spellcheck="false">
+   <div class="hint" style="margin:14px 0 4px"><b>Using Norie from your Home Screen?</b> Tap <b>Sign in with Google</b> (it opens Safari), choose <b>I use the Home Screen app</b>, then come back here and tap <b>Paste &amp; sign in</b>:</div>
+   <div class="btns" style="margin:8px 0 0"><button class="btn" id="sb_p" style="width:100%">Paste &amp; sign in</button></div>
+   <input id="sb_c" placeholder="…or type the code here" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px">
    <div class="btns" style="margin-top:12px"><button class="btn small" id="sb_x">Cancel</button><button class="btn main small" id="sb_o">Use code</button></div>`);
+  o.querySelector('#sb_p').onclick=async()=>{
+    let t='';try{t=await navigator.clipboard.readText()}catch(_){flash('Paste was blocked — type or paste the code below');return}
+    const ok=await codeSignIn(t);if(ok)o.remove();
+  };
   o.querySelector('#sb_x').onclick=()=>o.remove();
   o.querySelector('#sb_g').onclick=googleSignIn;
   o.querySelector('#sb_o').onclick=async()=>{const ok=await codeSignIn(o.querySelector('#sb_c').value);if(ok)o.remove()};
+}
+function showHandoff(s){
+  const o=overlay('sbhand',`<b style="font-size:18px">You’re signed in ✓</b>
+   <div class="hint" style="margin:6px 0 12px">Where do you use Norie?</div>
+   <div class="btns" style="margin:0 0 10px"><button class="btn main" id="sh_app" style="width:100%">I use the Home Screen app</button></div>
+   <div class="hint" style="margin:0 0 12px">Copies a one-time code. Then open Norie from your Home Screen → Settings → Account → Sign in → <b>Paste &amp; sign in</b>.</div>
+   <div class="btns" style="margin:0"><button class="btn" id="sh_here" style="width:100%">Use Norie here in Safari</button></div>`);
+  o.onclick=null;
+  o.querySelector('#sh_app').onclick=async()=>{
+    try{await navigator.clipboard.writeText(s.refresh_token);o.remove();flash('Code copied — now open Norie from your Home Screen')}
+    catch(_){o.querySelector('.hint').innerHTML='Copy failed. Select this code and copy it, then paste it in the Home Screen app:<div class="hl" style="word-break:break-all;font-size:12px;margin-top:8px">'+esc(s.refresh_token)+'</div>'}
+    /* this tab is only a go-between: it keeps no sign-in, so it can never invalidate the app's session */
+  };
+  o.querySelector('#sh_here').onclick=()=>{o.remove();finishLogin(s,'google')};
 }
 function showCode(){
   if(!ses)return;
@@ -188,12 +209,15 @@ function acctHTML(){
   return `<details class="glass setrow" id="sbacct"><summary><b class="lb">${ic('user')}Account</b><span class="stb ${badge[1]}" id="st_acct">${badge[0]}</span></summary>
   <div class="setwrap">${on?`
     <p>Signed in${ses.email?' as <b>'+esc(ses.email)+'</b>':''}. Your tasks, Finance data and Telegram settings are saved to your private account.</p>
-    <div class="hl">Shortcut key (goes into the bank-SMS shortcut): <b style="word-break:break-all">${esc(key)}</b></div>
-    <div class="btns"><button class="btn small" id="sb_ck">Copy shortcut key</button><button class="btn small" id="sb_cc">Copy sign-in code</button></div>
-    <div class="btns"><button class="btn small" id="sb_out">Sign out</button><button class="btn small danger" id="sb_wipe">Delete my cloud data</button></div>
-    <div class="hint" style="margin-top:8px">Bank SMS shortcut: send a POST to <b style="word-break:break-all">${esc(SB_URL)}/rest/v1/rpc/sms_ingest</b> with header <b>apikey</b> = the public key, and JSON <b>p_secret</b> = your shortcut key and <b>p_q</b> = the queue text.</div>`
+    <div class="btns"><button class="btn danger" id="sb_out" style="width:100%">Log out</button></div>
+    <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">More</summary>
+      <div class="hl" style="margin-top:8px">Shortcut key (for the bank-SMS shortcut): <b style="word-break:break-all">${esc(key)}</b></div>
+      <div class="btns"><button class="btn small" id="sb_ck">Copy shortcut key</button><button class="btn small" id="sb_cc">Copy sign-in code</button></div>
+      <div class="hint" style="margin-top:6px">Bank SMS shortcut: POST to <b style="word-break:break-all">${esc(SB_URL)}/rest/v1/rpc/sms_ingest</b> with header <b>apikey</b> = the public key and JSON <b>p_secret</b> = your shortcut key, <b>p_q</b> = the queue text.</div>
+      <div class="btns"><button class="btn small danger" id="sb_wipe">Delete my cloud data</button></div>
+    </details>`
   :`<p>Sign in to sync your tasks between devices, keep Telegram reminders working when the app is closed, and get bank messages automatically.</p>
-    <div class="btns"><button class="btn main small" id="sb_in">Sign in</button></div>
+    <div class="btns"><button class="btn main" id="sb_in" style="width:100%">Sign in</button></div>
     <div class="hint" style="margin-top:8px">Not signed in: everything stays only on this phone.</div>`}
   </div></details>`;
 }
