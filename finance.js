@@ -97,7 +97,9 @@ const isAuto=()=>!!(S.settings.gasUrl||'').trim();
 function setMode(m){
   const s=S.settings;
   if(m==='auto'){
-    const u=(s.gasUrlKept||NORIE_CLOUD_URL||'').trim();
+    const A=window.NorieAccount,kept=(s.gasUrlKept||'').trim();
+    if(A&&(!kept||(kept===A.SENT&&!A.signedIn()))){A.open();return}   /* account cloud: sign in first */
+    const u=(kept||NORIE_CLOUD_URL||'').trim();
     if(!u){flash('Auto mode needs a cloud address — the app owner has not added one yet');return}
     s.gasUrl=u;getUserKey();
   }else{
