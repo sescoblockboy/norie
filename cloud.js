@@ -138,6 +138,18 @@ async function signOut(){
 }
 
 /* coming back from Google: tokens arrive in the address bar */
+/* sign-in debug note: what did we get back from Google, and where (shown at the bottom of Settings → Account) */
+const CV='v6';
+(function(){
+  const keys=x=>[...new URLSearchParams(String(x||'').replace(/^[#?]/,'')).keys()].join(',');
+  if(!location.hash&&!location.search)return;
+  try{localStorage.setItem('norie.sb.dbg',JSON.stringify({t:Date.now(),sa:isStandalone(),h:keys(location.hash),q:keys(location.search),e:(new URLSearchParams(location.hash.replace(/^#/,'')||location.search.replace(/^\?/,''))).get('error_description')||''}))}catch(_){}
+})();
+function dbgLine(){
+  let d=null;try{d=JSON.parse(localStorage.getItem('norie.sb.dbg')||'null')}catch(_){}
+  const when=d?new Date(d.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+  return 'cloud '+CV+' · '+(isStandalone()?'Home Screen app':'Safari')+(d?' · last return '+when+' ('+(d.sa?'app':'Safari')+') got: '+(d.h||d.q||'nothing')+(d.e?' · '+d.e:''):' · no return seen yet');
+}
 (function handleReturn(){
   const h=location.hash||'';
   if(!/access_token=|error_description=|error=/.test(h)&&!/[?&]error_description=/.test(location.search))return;
@@ -256,6 +268,7 @@ function acctHTML(){
   :`<p>Sign in to sync your tasks between devices, keep Telegram reminders working when the app is closed, and get bank messages automatically.</p>
     <div class="btns"><button class="btn main" id="sb_in" style="width:100%">Sign in</button></div>
     <div class="hint" style="margin-top:8px">Not signed in: everything stays only on this phone.</div>`}
+    <div class="hint" style="margin-top:10px;font-size:11px;opacity:.65;word-break:break-word">${esc(dbgLine())}</div>
   </div></details>`;
 }
 function paintAcct(){const b=document.getElementById('st_acct');if(b){b.textContent=signedIn()?'Signed in ✓':'Signed out';b.className='stb '+(signedIn()?'ok':'')}}
