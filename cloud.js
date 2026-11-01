@@ -116,6 +116,7 @@ async function finishLogin(session,source){
 const isStandalone=()=>{try{return navigator.standalone===true||matchMedia('(display-mode: standalone)').matches}catch(_){return false}};
 
 function googleSignIn(){
+  try{localStorage.setItem('norie.sb.pend',String(Date.now()))}catch(_){}
   const back=location.origin+location.pathname;
   location.href=SB_URL+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(back);
 }
@@ -150,6 +151,20 @@ async function signOut(){
     else setTimeout(()=>finishLogin(s,'google'),200);
   }
 })();
+
+/* if we left for Google and came back with no sign-in, say why instead of silently doing nothing */
+setTimeout(()=>{
+  let pend=0;try{pend=+localStorage.getItem('norie.sb.pend')||0;localStorage.removeItem('norie.sb.pend')}catch(_){}
+  if(!pend||Date.now()-pend>15*60000||ses)return;
+  const o=overlay('sbwhy',`<b style="font-size:18px">Google sent you back, but you’re not signed in</b>
+   <div class="hint" style="margin:8px 0 10px">This normally means one of these:<br>
+   • Your Google account is not a <b>test user</b> (or the app is not published).<br>
+   • Supabase → Authentication → URL Configuration is missing <b>${esc(location.origin)}/**</b> under Redirect URLs.<br>
+   • You opened Norie from the Home Screen and the sign-in finished in Safari — use <b>Paste &amp; sign in</b>.</div>
+   <div class="btns"><button class="btn small" id="sw_x">Close</button><button class="btn main small" id="sw_p">Paste &amp; sign in</button></div>`);
+  o.querySelector('#sw_x').onclick=()=>o.remove();
+  o.querySelector('#sw_p').onclick=()=>{o.remove();openSignIn()};
+},1500);
 
 /* ---------- screens ---------- */
 function overlay(id,html){
