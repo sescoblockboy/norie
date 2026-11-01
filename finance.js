@@ -111,7 +111,7 @@ function setMode(m){
 }
 
 /* ---------- state ---------- */
-const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];S.fin.wi=Array.isArray(S.fin.wi)?S.fin.wi:[];return S.fin};
+const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];S.fin.wi=Array.isArray(S.fin.wi)?S.fin.wi:[];S.fin.pay=Array.isArray(S.fin.pay)?S.fin.pay:[];return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
 const ETB=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const ETB0=v=>Math.round(Number(v)).toLocaleString('en-US');
@@ -171,6 +171,7 @@ mergeStates=function(a,b){
   const sm=new Map();
   [...(fb.subs||[]),...(fa.subs||[])].forEach(x=>{if(del[x.id])return;const old=sm.get(x.id);if(!old||(x.u||0)>=(old.u||0))sm.set(x.id,x)});
   o.fin={tx:[...m.values()].sort((x,y)=>y.ts-x.ts),del,subs:[...sm.values()].sort((x,y)=>x.id<y.id?-1:1)};
+  {const pm=new Map();[...(fb.pay||[]),...(fa.pay||[])].forEach(x=>{if(del[x.id])return;const old=pm.get(x.id);if(!old||(x.u||0)>=(old.u||0))pm.set(x.id,x)});o.fin.pay=[...pm.values()].sort((x,y)=>x.id<y.id?-1:1)}
   {const wm=new Map();[...(fb.wi||[]),...(fa.wi||[])].forEach(x=>{if(!del[x.id])wm.set(x.id,x)});o.fin.wi=[...wm.values()]}
   {const pa=fa.plan,pb=fb.plan,pl=(pa&&(!pb||(pa.u||0)>=(pb.u||0)))?pa:pb;if(pl&&pl.end>Date.now()||pl&&pl.cleared)o.fin.plan=pl}
   return o;
@@ -247,6 +248,68 @@ function cardsHTML(){
   }).join('');
 }
 
+/* ---------- numbers: commas while you type ---------- */
+function commaIn(el){
+  if(!el)return;
+  const fmt=()=>{
+    const pos=el.selectionStart,before=el.value.length;
+    let v=el.value.replace(/[^\d.]/g,'');
+    const i=v.indexOf('.');
+    if(i>=0)v=v.slice(0,i+1)+v.slice(i+1).replace(/\./g,'').slice(0,2);
+    const parts=v.split('.');
+    el.value=(parts[0]||'').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,',')+(parts[1]!==undefined?'.'+parts[1]:'');
+    try{const np=Math.max(0,(pos||0)+(el.value.length-before));el.setSelectionRange(np,np)}catch(_){}
+  };
+  el.addEventListener('input',fmt);
+  if(el.value)fmt();
+}
+const numVal=el=>parseFloat(String(el.value).replace(/,/g,''));
+const fmtIn=v=>v==null||v===''?'':Number(v).toLocaleString('en-US',{maximumFractionDigits:2});
+
+/* ---------- payroll: salary and other regular pay ---------- */
+const PAYPER={week:['Weekly',52/12],biweek:['Every 2 weeks',26/12],month:['Monthly',1],year:['Yearly',1/12]};
+const payMo=p=>p.amt*(PAYPER[p.per]||PAYPER.month)[1];
+const payTot=()=>F().pay.reduce((a,p)=>a+payMo(p),0);
+function payCardHTML(A){
+  const pay=F().pay,m=payTot(),sm=F().subs.reduce((a,s)=>a+perMo(s),0);
+  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Payroll &amp; salary</b><button class="chip on" data-fpayadd>+ Add</button></div>`;
+  if(!pay.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add your salary or any regular pay — weekly, monthly or yearly — and Norie forecasts your income for 1 month, 6 months and a year.</p></div>`;
+  const v=(x)=>`<b class="${x<0?'neg':''}">${M((x<0?'−':'')+ETB0(Math.abs(x)))}</b>`;
+  const rows=[['Income',m],['After subscriptions',m-sm]];
+  if(A&&A.enough&&A.mOut>0)rows.push(['At your usual spending',m-A.mOut]);
+  return `<div class="fsub glass">${head}
+  <div class="fsbig"><b class="pos">${M('+'+ETB(m))}</b><small>ETB every month</small></div>
+  <div class="fpt"><span></span><i>1 month</i><i>6 months</i><i>1 year</i>
+  ${rows.map(([n,x])=>`<span>${n}</span>${v(x)}${v(x*6)}${v(x*12)}`).join('')}</div>
+  <div class="fsl">${pay.slice().sort((a,b)=>payMo(b)-payMo(a)).map(p=>`<div class="fsr" data-fpay="${p.id}"><div class="fm"><div class="ft">${esc(p.name)}</div><div class="fs">${PAYPER[p.per][0]}${p.per==='month'?'':' · '+M(ETB(payMo(p)))+' / mo'}</div></div><div class="fa pos">${M('+'+ETB(p.amt))}</div></div>`).join('')}</div></div>`;
+}
+function finPayAsk(pay){
+  let o=document.getElementById('finpay');if(o)o.remove();
+  o=document.createElement('div');o.id='finpay';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">${pay?'Edit pay':'Add pay'}</b>
+  <label>Name</label><input id="fp_n" value="${esc(pay?pay.name:'')}" placeholder="e.g. Salary, Freelance, Rent income" autocomplete="off">
+  <label>Amount (ETB)</label><input id="fp_a" value="${pay?fmtIn(pay.amt):''}" inputmode="decimal" placeholder="0.00" autocomplete="off">
+  <label>Paid</label><select id="fp_p">${Object.keys(PAYPER).map(k=>`<option value="${k}" ${(pay?pay.per:'month')===k?'selected':''}>${PAYPER[k][0]}</option>`).join('')}</select>
+  <div class="btns" style="margin-top:14px"><button class="btn small" id="fp_c">Cancel</button>${pay?'<button class="btn danger small" id="fp_d">Delete</button>':''}<button class="btn main small" id="fp_o">Save</button></div></div>`;
+  document.body.append(o);
+  commaIn(o.querySelector('#fp_a'));
+  o.addEventListener('click',e=>{if(e.target===o)o.remove()});
+  o.querySelector('#fp_c').onclick=()=>o.remove();
+  const d=o.querySelector('#fp_d');
+  if(d)d.onclick=()=>{const f=F();f.del[pay.id]=Date.now();f.pay=f.pay.filter(x=>x.id!==pay.id);save();o.remove();render()};
+  o.querySelector('#fp_o').onclick=()=>{
+    const name=o.querySelector('#fp_n').value.trim(),amt=numVal(o.querySelector('#fp_a'));
+    if(!name){o.querySelector('#fp_n').focus();return}
+    if(!isFinite(amt)||amt<=0){o.querySelector('#fp_a').focus();return}
+    const f=F(),per=o.querySelector('#fp_p').value;
+    if(pay)Object.assign(pay,{name:name.slice(0,40),amt,per,u:Date.now()});
+    else f.pay.push({id:'p'+uid(),name:name.slice(0,40),amt,per,u:Date.now()});
+    save();o.remove();render();
+  };
+  setTimeout(()=>o.querySelector('#fp_n').focus(),60);
+}
+
 /* ---------- subscriptions ---------- */
 const PER={week:['Weekly',52/12],month:['Monthly',1],year:['Yearly',1/12]};
 const perMo=s=>s.amt*(PER[s.per]||PER.month)[1];
@@ -259,11 +322,11 @@ function subCardHTML(income){
   const v=sel?perMo(sel):m,pct=income>0?Math.round(v/income*100):null,share=m>0?Math.round(perMo(sel||{amt:0,per:'month'})/m*100):0;
   const who=sel?`<div class="fsel"><div><small>Showing only</small><b>${esc(sel.name)}</b></div><div class="fselb"><button class="chip" data-fsubedit>Edit</button><button class="chip on" data-fsuball>Show all</button></div></div>`:'';
   const cap=sel
-    ?`<p class="fcap" style="margin:8px 2px 4px">${PER[sel.per][0]} bill of ${M('ETB '+ETB(sel.amt))}${sel.per==='month'?'':' ≈ '+M(ETB(v))+' / month'}. ${subs.length>1?`It is <b>${share}%</b> of all your subscriptions`:''}${pct!=null?`${subs.length>1?' and ':'It is '}<b class="neg">${pct}%</b> of your average monthly income`:''}.</p>`
-    :(pct!=null?`<p class="fcap" style="margin:8px 2px 4px">About <b class="neg">${pct}%</b> of your average monthly income. <span style="opacity:.8">Tap a subscription to see just that one.</span></p>`:`<p class="fcap" style="margin:8px 2px 4px">Tap a subscription to see just that one.</p>`);
+    ?`<p class="fcap" style="margin:8px 2px 4px">${PER[sel.per][0]} bill of ${M('ETB '+ETB(sel.amt))}${sel.per==='month'?'':' ≈ '+M(ETB(v))+' / month'}. ${subs.length>1?`It is <b>${share}%</b> of all your subscriptions`:''}${pct!=null?`${subs.length>1?' and ':'It is '}<b class="neg">${pct}%</b> of your monthly income`:''}.</p>`
+    :(pct!=null?`<p class="fcap" style="margin:8px 2px 4px">About <b class="neg">${pct}%</b> of your monthly income. <span style="opacity:.8">Tap a subscription to see just that one.</span></p>`:`<p class="fcap" style="margin:8px 2px 4px">Tap a subscription to see just that one.</p>`);
   return `<div class="fsub glass">${head}${who}
   <div class="fsbig"><b class="neg">${M('−'+ETB(v))}</b><small>ETB every month${sel?' · '+esc(sel.name):' · all'}</small></div>
-  <div class="fspr"><div><small>1 month</small><b>${M(ETB0(v))}</b></div><div><small>6 months</small><b>${M(ETB0(v*6))}</b></div><div><small>1 year</small><b>${M(ETB0(v*12))}</b></div></div>
+  <div class="fspr f4"><div><small>Per day</small><b>${M(ETB(v*12/365))}</b></div><div><small>1 month</small><b>${M(ETB0(v))}</b></div><div><small>6 months</small><b>${M(ETB0(v*6))}</b></div><div><small>1 year</small><b>${M(ETB0(v*12))}</b></div></div>
   ${cap}
   <div class="fsl">${subs.slice().sort((a,b)=>perMo(b)-perMo(a)).map(s=>`<div class="fsr${s.id===selSub?' sel':''}" data-fsub="${s.id}"><div class="fm"><div class="ft">${esc(s.name)}</div><div class="fs">${PER[s.per][0]}${s.per==='month'?'':' · '+M(ETB(perMo(s)))+' / mo'}</div></div><div class="fa neg">${M('−'+ETB(s.amt))}</div></div>`).join('')}</div></div>`;
 }
@@ -273,7 +336,7 @@ function finSubAsk(sub){
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
   o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">${sub?'Edit subscription':'New subscription'}</b>
   <label>Name</label><input id="fs_n" value="${esc(sub?sub.name:'')}" placeholder="e.g. Netflix, Spotify, gym" autocomplete="off">
-  <label>Amount (ETB)</label><input id="fs_a" value="${sub?sub.amt:''}" inputmode="decimal" placeholder="0.00" autocomplete="off">
+  <label>Amount (ETB)</label><input id="fs_a" value="${sub?fmtIn(sub.amt):''}" inputmode="decimal" placeholder="0.00" autocomplete="off">
   <label>Billed</label><select id="fs_p">${Object.keys(PER).map(k=>`<option value="${k}" ${(sub?sub.per:'month')===k?'selected':''}>${PER[k][0]}</option>`).join('')}</select>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fs_c">Cancel</button>${sub?'<button class="btn danger small" id="fs_d">Delete</button>':''}<button class="btn main small" id="fs_o">Save</button></div></div>`;
   document.body.append(o);
@@ -289,6 +352,7 @@ function finSubAsk(sub){
     else f.subs.push({id:'s'+uid(),name:name.slice(0,40),amt,per,u:Date.now()});
     save();o.remove();render();
   };
+  commaIn(o.querySelector('#fs_a'));
   setTimeout(()=>o.querySelector('#fs_n').focus(),60);
 }
 
@@ -413,13 +477,14 @@ function finWhatIf(){
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fw_c">Cancel</button><button class="btn main small" id="fw_o">Add</button></div></div>`;
   document.body.append(o);
   const A=o.querySelector('#fw_a'),D=o.querySelector('#fw_d'),Pv=o.querySelector('#fw_p');
+  commaIn(A);commaIn(D);
   const num=el=>parseFloat(String(el.value).replace(/,/g,''));
   const prev=()=>{const x=num(A);if(isFinite(x)&&x>0){const add=x*.6/P.daysLeft;Pv.innerHTML=`You could spend about <b>${M(ETB0(P.allow+add))}</b> a day (<b>+${M(ETB0(add))}</b>), and ETB ${M(ETB0(x*.4))} goes to backup.`}else Pv.innerHTML=`Today you can spend about <b>${M(ETB0(P.allow))}</b> a day.`};
   A.oninput=()=>{D.value='';prev()};
   D.oninput=()=>{const w=num(D);if(!isFinite(w)||w<=0){A.value='';prev();return}
     const need=(w*P.daysLeft-(P.remaining+P.spentToday))/.6;
     if(need<=0){A.value='';Pv.innerHTML='You can already spend that much per day. 🎉'}
-    else{A.value=String(Math.ceil(need));prev();Pv.innerHTML=`To spend ETB <b>${M(ETB0(w))}</b> a day you would need about <b>${M(ETB0(need))}</b> extra over the next ${P.daysLeft} days.`}};
+    else{A.value=fmtIn(Math.ceil(need));prev();Pv.innerHTML=`To spend ETB <b>${M(ETB0(w))}</b> a day you would need about <b>${M(ETB0(need))}</b> extra over the next ${P.daysLeft} days.`}};
   o.querySelector('#fw_c').onclick=()=>o.remove();
   o.onclick=e=>{if(e.target===o)o.remove()};
   o.querySelector('#fw_o').onclick=()=>{
@@ -457,31 +522,39 @@ function vBank(k){
   ${listHTML(list)}`;
 }
 let advTab='plan';
+let repDay=null;
 function weekBars(){
   const f=F(),t0=sod(Date.now()),a=[];
-  for(let i=6;i>=0;i--){const d0=t0-i*DAY;a.push({d:d0,v:f.tx.filter(t=>t.dir==='out'&&t.ts>=d0&&t.ts<d0+DAY).reduce((x,t)=>x+t.amt,0)})}
-  const mx=Math.max(1,...a.map(x=>x.v));
-  return `<div class="fwk">${a.map((x,i)=>`<div class="${i===6?'td':''}"><i style="height:${Math.max(3,Math.round(x.v/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}</small></div>`).join('')}</div>`;
+  for(let i=6;i>=0;i--){const d0=t0-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY);a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
+  const sel=(repDay!=null&&repDay>=t0-6*DAY&&repDay<=t0)?repDay:t0;
+  const sum=l=>l.reduce((x,t)=>x+t.amt,0),mx=Math.max(1,...a.map(x=>sum(x.out)));
+  const cur=a.find(x=>x.d===sel)||a[6],tot=sum(cur.out),inn=sum(cur.inn);
+  const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i style="height:${Math.max(4,Math.round(sum(x.out)/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
+  const items=cur.out.slice().sort((p,q)=>q.amt-p.amt).slice(0,4).map(t=>`<div class="fsr" style="cursor:default"><div class="fm"><div class="ft">${esc(t.who||'Money out')}</div><div class="fs">${fmtT(t.ts)}</div></div><div class="fa neg">${M('−'+ETB(t.amt))}</div></div>`).join('');
+  const detail=`<div class="fday"><div class="fdh"><b>${esc(dayLabel(cur.d))}</b><span>${new Date(cur.d).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span></div>
+    <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Payments</small><b>${cur.out.length}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div></div>
+    ${items?`<div class="fsl" style="margin-top:4px">${items}</div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}</div>`;
+  return bars+detail;
 }
 function vAdvice(){
   const A=advise(),tabs=[['plan','Plan'],['report','Report'],['subs','Subscriptions']];
   const seg=`<div class="chips fchips fseg">${tabs.map(([k,n])=>`<button class="chip ${advTab===k?'on':''}" data-fadv="${k}">${n}</button>`).join('')}</div>`;
   let body='';
   if(advTab==='plan'){
-    body=`${planHTML(A)}
+    body=`${planHTML(A)}${payCardHTML(A)}
     <div class="fsub glass"><div class="fspr" style="margin-top:0"><div><small>You spend / day</small><b>${M(ETB0(A.dailyOut))}</b></div><div><small>Balance lasts</small><b>${A.runway==null?'—':Math.floor(A.runway)+' days'}</b></div></div></div>`;
   }else if(advTab==='report'){
     const net=A.got-A.spent,sr=A.mIn>0?Math.round((A.mIn-A.mOut)/A.mIn*100):null;
     const top=A.top.length?`<h2>Where it went</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
     body=`<div class="fsub glass"><div class="fsh"><b class="lb">This month</b>${sr!=null?`<span class="fpill ${sr<10?'bad':'ok'}">Saving ${sr}%</span>`:''}</div>
     <div class="fspr" style="margin-top:2px"><div><small>Money in</small><b class="pos">${M(ETB0(A.got))}</b></div><div><small>Money out</small><b class="neg">${M(ETB0(A.spent))}</b></div><div><small>Net</small><b class="${net<0?'neg':'pos'}">${M((net<0?'−':'')+ETB0(Math.abs(net)))}</b></div></div></div>
-    <div class="fsub glass"><div class="fsh"><b class="lb">Spending, last 7 days</b></div>${weekBars()}
+    <div class="fsub glass"><div class="fsh"><b class="lb">Spending, last 7 days</b></div><p class="fcap" style="margin:2px 2px 0">Tap a day to see what you spent.</p>${weekBars()}
     ${A.endBal!=null?`<p class="fcap" style="margin:8px 2px 2px">At this pace your balance at month end is about <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b>.</p>`:''}</div>
     ${top}
     <h2>What to do</h2><div class="card glass">${A.tips.map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>`;
   }else{
     const rec=A.rec.length?`<h2>Looks recurring</h2><div class="card glass">${A.rec.map((r,i)=>`<div class="frow"><div class="fm"><div class="ft">${esc(r.name)}</div><div class="fs">~ETB ${M(ETB(r.amt))} ${r.per==='week'?'weekly':'monthly'} · next ~${fmtD(r.next)}</div></div><button class="chip on" data-fadd="${i}">+ Add</button></div>`).join('')}</div>`:'';
-    body=`${subCardHTML(A.mIn)}${rec}`;
+    body=`${subCardHTML(payTot()>0?payTot():A.mIn)}${rec}`;
   }
   return `${backBtn('home','Master card')}<h1>${ic('activity',26)}Smart advisor</h1><p class="sub">Forecast from your SMS history</p>${seg}${body}
   <p class="fcap" style="margin:14px 8px 0">Estimates based on your bank SMS — not professional financial advice.</p>`;
@@ -683,6 +756,9 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fwi]')){finWhatIf();return}
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
+  const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
+  if(T.closest('[data-fpayadd]')){finPayAsk();return}
+  const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
   const fsb=T.closest('[data-fsub]');if(fsb){const id=fsb.dataset.fsub;keep(()=>{selSub=selSub===id?null:id});return}
   if(T.closest('[data-fsuball]')){keep(()=>{selSub=null});return}
   if(T.closest('[data-fsubedit]')){const x=F().subs.find(z=>z.id===selSub);if(x)finSubAsk(x);return}
@@ -777,7 +853,14 @@ css.textContent=`
 .fbar{height:8px;border-radius:8px;background:rgba(160,120,100,.18);overflow:hidden;margin:10px 2px 4px}.fbar i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#2f9e6a,var(--gold),var(--pink))}
 .fseg{margin:6px 0 12px}.fseg .chip{flex:1;text-align:center;justify-content:center}
 .fpill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px}.fpill.ok{background:rgba(47,158,106,.14);color:#2f9e6a}.fpill.bad{background:rgba(244,104,127,.14);color:var(--pink)}
-.fwk{display:flex;align-items:flex-end;gap:8px;height:92px;margin:10px 2px 0}.fwk>div{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}.fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.35)}.fwk .td i{background:linear-gradient(180deg,#ff9aab,var(--pink))}.fwk small{font-size:11px;color:var(--muted);font-weight:600}
+.fwk{display:flex;align-items:flex-end;gap:6px;height:118px;margin:10px 0 0}
+.fwk button{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;border:0;background:none;padding:0;font:inherit;cursor:pointer;border-radius:12px}
+.fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.3)}
+.fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
+.fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
+.fday{margin-top:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65)}.fdh{display:flex;justify-content:space-between;align-items:baseline}.fdh b{font-size:15px}.fdh span{font-size:12px;color:var(--muted);font-weight:600}
+.fspr.f4 b{font-size:13.5px}.fspr.f4>div{padding-left:2px;padding-right:2px}
+.fpt{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:7px 6px;font-size:12px;align-items:center;margin:8px 0 6px}.fpt i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);text-align:right}.fpt span{color:var(--muted);font-weight:600;font-size:12px}.fpt b{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
 .fwi{margin:8px 0 8px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65);border:1px dashed rgba(200,150,46,.5)}
 .fwih{display:flex;align-items:center;justify-content:space-between}.fwih b{font-size:14px}
 .fwic{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.fwc{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;border-radius:14px;background:rgba(47,158,106,.14);color:#2f9e6a;font-weight:700;font-size:13.5px}
