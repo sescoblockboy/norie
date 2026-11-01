@@ -1568,8 +1568,6 @@ function initNorie(){
   const h=homePos();Object.assign(NPOS,{x:h.x,y:h.y,tx:h.x,ty:h.y});
   NR.nextAt=performance.now()+4800;
   nDrag(el);syncNorie();
-  /* motion sensors: iPhone needs a tap to allow them, so ask once on the first touch; other phones start straight away */
-  if(window.DeviceMotionEvent&&typeof DeviceMotionEvent.requestPermission==='function'){const ask=()=>{removeEventListener('pointerup',ask,true);nAskMotion()};addEventListener('pointerup',ask,true)}else nAskMotion();
   const track=(x,y)=>{NR.mx=x;NR.my=y;NR.lastMove=performance.now()};
   addEventListener('pointermove',e=>track(e.clientX,e.clientY),{passive:true});
   addEventListener('resize',()=>{const p=clampPos(NPOS.x,NPOS.y);NPOS.x=NPOS.tx=p.x;NPOS.y=NPOS.ty=p.y});
