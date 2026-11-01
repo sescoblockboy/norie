@@ -224,7 +224,7 @@ a{color:var(--pink)}
 .rbt{transition:transform .15s}
 
 /* Speech bubble */
-.nb{position:absolute;width:max-content;max-width:260px;padding:11px 15px;border-radius:18px;font-size:14px;font-weight:700;line-height:1.35;color:var(--ink);background:rgba(255,255,255,.96);border:1px solid var(--glass-b);box-shadow:0 8px 26px rgba(200,80,100,.3);pointer-events:none;z-index:50;white-space:normal;word-wrap:break-word}
+.nb{position:absolute;width:max-content;max-width:190px;padding:7px 11px;border-radius:14px;font-size:12px;font-weight:650;line-height:1.3;color:var(--ink);background:rgba(255,255,255,.96);border:1px solid var(--glass-b);box-shadow:0 8px 26px rgba(200,80,100,.3);pointer-events:none;z-index:50;white-space:normal;word-wrap:break-word}
 .nb.up{bottom:calc(100% + 8px)} .nb.dn{top:calc(100% + 8px)}
 .nb.r{right:0} .nb.l{left:0}
 .nb::after{content:"";position:absolute;width:12px;height:12px;background:inherit;border:inherit;transform:rotate(45deg)}
@@ -237,7 +237,7 @@ a{color:var(--pink)}
 #hello.on{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .3s}
 .hello-av{width:min(64vw,270px);height:min(64vw,270px);font-size:min(46vw,190px);display:grid;place-items:center;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 .hwrap{display:flex;flex-direction:column;align-items:center;gap:16px}
-.hbub{min-height:46px;max-width:min(300px,84vw);padding:11px 18px;border-radius:18px;font-size:15px;font-weight:700;text-align:center;color:var(--ink);background:rgba(255,255,255,.92);border:1px solid var(--glass-b);box-shadow:0 8px 24px rgba(200,80,100,.2);transition:opacity .2s;pointer-events:none}
+.hbub{min-height:34px;max-width:min(250px,80vw);padding:8px 14px;border-radius:15px;font-size:13px;font-weight:650;text-align:center;color:var(--ink);background:rgba(255,255,255,.92);border:1px solid var(--glass-b);box-shadow:0 8px 24px rgba(200,80,100,.2);transition:opacity .2s;pointer-events:none}
 .hbub.off{opacity:0}
 .hbub.pop{animation:nbpop .28s cubic-bezier(.2,1.4,.3,1)}
 .hx{position:absolute;top:calc(env(safe-area-inset-top) + 14px);right:16px;width:38px;height:38px;font-size:17px}
@@ -1257,18 +1257,18 @@ const NSZ=Math.min(innerWidth,innerHeight)<520?58:82;
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function mixHex(a,b,t){const p=h=>[1,3,5].map(k=>parseInt(h.slice(k,k+2),16));const A=p(a),B=p(b);return 'rgb('+A.map((v,k)=>Math.round(v+(B[k]-v)*t)).join(',')+')'}
-const NR={shakeAcc:0,shakeAccT:0,dizzyUntil:0,bigExpr:'happy',bigUntil:0,clicks:[],hbT:0,mx:innerWidth/2,my:innerHeight/3,lastMove:0,tx:0,ty:0,tiltAt:0,shakeUntil:0,shakeStamp:0,
+const NR={acheUntil:0,acheSay:0,shakeAcc:0,shakeAccT:0,dizzyUntil:0,bigExpr:'happy',bigUntil:0,clicks:[],hbT:0,mx:innerWidth/2,my:innerHeight/3,lastMove:0,tx:0,ty:0,tiltAt:0,shakeUntil:0,shakeStamp:0,
   mode:'home',taskId:null,arrived:false,arriveT:0,stayUntil:0,nextAt:0,visited:0,
   pauseUntil:0,held:false,talkUntil:0,forced:null,forcedUntil:0,expr:'calm',
   vx:0,wx:innerWidth/2,wy:innerHeight/2,wanderAt:0,bubUntil:0};
 const NPOS={x:0,y:0,vx:0,vy:0,tx:0,ty:0};
 const EXP={
-  calm:{cover:.06,tilt:0,sq:0,m:.55,o:.04,teeth:0,pupil:1,tint:0,vein:0},
+  calm:{cover:.08,tilt:0,sq:0,m:.3,o:.02,teeth:0,pupil:1,tint:0,vein:0},
   meh:{cover:.24,tilt:6,sq:.1,m:-.1,o:.05,teeth:0,pupil:.92,tint:.12,vein:0},
   mad:{cover:.42,tilt:17,sq:.55,m:-.55,o:.42,teeth:1,pupil:.7,tint:1,vein:1},
   held:{cover:-.2,tilt:-6,sq:0,m:-.1,o:.85,teeth:0,pupil:1.3,tint:0,vein:0},
-  happy:{cover:.12,tilt:-3,sq:.38,m:1,o:.35,teeth:0,pupil:1.1,tint:0,vein:0},
-  ache:{cover:.5,tilt:-12,sq:.7,m:-.8,o:.3,teeth:0,pupil:.6,tint:.3,vein:0,ache:1},
+  happy:{cover:.14,tilt:-2,sq:.3,m:.62,o:.1,teeth:0,pupil:1.08,tint:0,vein:0},
+  ache:{cover:.52,tilt:-14,sq:.75,m:-.7,o:.14,teeth:0,pupil:.55,tint:.35,vein:0,ache:1},
   dizzy:{cover:.1,tilt:0,sq:0,m:0,o:.4,teeth:0,pupil:1,tint:0,vein:0,dizzy:1}
 };
 for(const k in EXP)EXP[k]=Object.assign({dizzy:0,ache:0},EXP[k]);
@@ -1339,14 +1339,12 @@ function nPoke(){
     nHSay('Ow! Headache…',1700);
   }
 }
-function nBigExpr(now){return now<NR.dizzyUntil?'dizzy':now<NR.bigUntil?NR.bigExpr:'happy'}
+function nBigExpr(now){return now<NR.acheUntil?'ache':now<NR.dizzyUntil?'dizzy':now<NR.bigUntil?NR.bigExpr:'happy'}
 function nShake(a){
   const now=performance.now();
   NR.shakeAcc=Math.max(0,NR.shakeAcc-(now-NR.shakeAccT)/1000*.6)+a;NR.shakeAccT=now;
-  if(NR.shakeAcc>2.2&&now>NR.dizzyUntil){
-    NR.shakeAcc=0;NR.dizzyUntil=now+4800;NR.shakeUntil=0;
-    nSay('Everything’s spinning…',3800);
-  }
+  NR.acheUntil=now+3600+Math.min(2400,NR.shakeAcc*900);
+  if(now>NR.acheSay){NR.acheSay=now+6000;nSay(rand(['Ow… my head!','Ugh, headache…','Stop… it hurts.','My circuits are pounding…']),3000)}
 }
 function nextTask(rows,now){
   if(NR.visited>=3){NR.visited=0;NR.mode='home';NR.taskId=null;NR.nextAt=now+9000;return}
@@ -1357,7 +1355,8 @@ function nLogic(now){
   const T=NPOS;
   if(NR.held){NR.expr='held';return}
   let expr='calm';
-  if(now<NR.dizzyUntil)expr='dizzy';
+  if(now<NR.acheUntil)expr='ache';
+  else if(now<NR.dizzyUntil)expr='dizzy';
   else if(now<NR.shakeUntil)expr='held';
   else if(now<NR.forcedUntil)expr=NR.forced;
   const busy=$('#sheet').classList.contains('on')||$('#hello').classList.contains('on');
@@ -1461,6 +1460,7 @@ function nStep(el,dt,now){
   sa(P.tint,'opacity',(E.tint*.6).toFixed(2));
   sa(P.flush,'opacity',(E.tint*.55).toFixed(2));
   sa(P.vein,'opacity',E.vein.toFixed(2));
+  {const th=.5+.5*Math.sin(now/170);sa(P.pain,'opacity',(E.ache*(.35+.65*th)).toFixed(2));sa(P.halo,'opacity',(.5+E.ache*.4*th).toFixed(2))}
   
   const vx=st.float?(NR.held?NR.vx:NPOS.vx):0;
   if(st.float&&NR.shakeStamp!==st.seenShake){st.seenShake=NR.shakeStamp;st.rv+=(Math.random()<.5?-1:1)*(300+Math.random()*250)}
@@ -1471,7 +1471,7 @@ function nStep(el,dt,now){
   st.av+=(140*(aT-st.ant)-6*st.av)*dt;st.ant+=st.av*dt;
   sa(P.ant,'transform',`rotate(${clamp(st.ant,-35,35).toFixed(2)} 120 36)`);
   
-  const t3=`rotateX(${f(-hy*13)}deg) rotateY(${f(hx*22)}deg) rotateZ(${f(st.roll)}deg)`;
+  const t3=`rotateX(${f(-hy*13)}deg) rotateY(${f(hx*22)}deg) rotateZ(${f(st.roll+E.ache*Math.sin(now/90)*2.2)}deg) scale(${f(1+E.ache*.025*Math.sin(now/170))})`;
   if(st.t3!==t3){st.t3=t3;st.threeD.style.transform=t3}
 }
 
@@ -1568,6 +1568,8 @@ function initNorie(){
   const h=homePos();Object.assign(NPOS,{x:h.x,y:h.y,tx:h.x,ty:h.y});
   NR.nextAt=performance.now()+4800;
   nDrag(el);syncNorie();
+  /* motion sensors: iPhone needs a tap to allow them, so ask once on the first touch; other phones start straight away */
+  if(window.DeviceMotionEvent&&typeof DeviceMotionEvent.requestPermission==='function'){const ask=()=>{removeEventListener('pointerup',ask,true);nAskMotion()};addEventListener('pointerup',ask,true)}else nAskMotion();
   const track=(x,y)=>{NR.mx=x;NR.my=y;NR.lastMove=performance.now()};
   addEventListener('pointermove',e=>track(e.clientX,e.clientY),{passive:true});
   addEventListener('resize',()=>{const p=clampPos(NPOS.x,NPOS.y);NPOS.x=NPOS.tx=p.x;NPOS.y=NPOS.ty=p.y});
@@ -2417,7 +2419,7 @@ initNorie();
 if(!fromLink&&S.settings.greet!==false)showHello();
 </script>
 <script src="finance.js"></script>
-<script src="cloud.js">
+<script src="cloud.js"></script>
 <script src="tasks-clean.js"></script>
 </body>
 </html>
