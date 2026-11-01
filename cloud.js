@@ -152,6 +152,9 @@ async function signOut(){
   }
 })();
 
+/* link from the Home Screen app: ?signin=1 opened in Safari starts Google sign-in straight away */
+if(/[?&]signin=1/.test(location.search)&&!isStandalone()){try{history.replaceState(null,'',location.pathname)}catch(_){}setTimeout(googleSignIn,300)}
+
 /* if we left for Google and came back with no sign-in, say why instead of silently doing nothing */
 setTimeout(()=>{
   let pend=0;try{pend=+localStorage.getItem('norie.sb.pend')||0;localStorage.removeItem('norie.sb.pend')}catch(_){}
@@ -160,7 +163,7 @@ setTimeout(()=>{
    <div class="hint" style="margin:8px 0 10px">This normally means one of these:<br>
    • Your Google account is not a <b>test user</b> (or the app is not published).<br>
    • Supabase → Authentication → URL Configuration is missing <b>${esc(location.origin)}/**</b> under Redirect URLs.<br>
-   • You opened Norie from the Home Screen and the sign-in finished in Safari — use <b>Paste &amp; sign in</b>.</div>
+   • You started from the Home Screen app: sign in from <b>Safari</b> instead (Settings → Account → Sign in shows the steps).</div>
    <div class="btns"><button class="btn small" id="sw_x">Close</button><button class="btn main small" id="sw_p">Paste &amp; sign in</button></div>`);
   o.querySelector('#sw_x').onclick=()=>o.remove();
   o.querySelector('#sw_p').onclick=()=>{o.remove();openSignIn()};
@@ -177,19 +180,31 @@ function overlay(id,html){
   return o;
 }
 function openSignIn(){
-  const o=overlay('sbsign',`<b style="font-size:18px">Sign in to Norie</b>
+  const sa=isStandalone(),link=location.origin+'/?signin=1';
+  const o=overlay('sbsign',sa?`<b style="font-size:18px">Sign in to Norie</b>
+   <div class="hint" style="margin:6px 0 10px">Google only lets you sign in from <b>Safari</b>. It takes 3 quick steps:</div>
+   <div class="hint" style="margin:0 0 4px"><b>1.</b> Tap <b>Copy sign-in link</b>, open <b>Safari</b> and paste it in the address bar.</div>
+   <div class="btns" style="margin:6px 0 10px"><button class="btn main" id="sb_l" style="width:100%">Copy sign-in link</button></div>
+   <div class="hint" style="margin:0 0 4px"><b>2.</b> Sign in with Google, then tap <b>I use the Home Screen app</b>. That copies a one-time code.</div>
+   <div class="hint" style="margin:0 0 4px"><b>3.</b> Come back here and tap <b>Paste &amp; sign in</b>:</div>
+   <div class="btns" style="margin:6px 0 0"><button class="btn" id="sb_p" style="width:100%">Paste &amp; sign in</button></div>
+   <input id="sb_c" placeholder="…or type the code here" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px">
+   <div class="btns" style="margin-top:12px"><button class="btn small" id="sb_x">Cancel</button><button class="btn main small" id="sb_o">Use code</button></div>`
+  :`<b style="font-size:18px">Sign in to Norie</b>
    <div class="hint" style="margin:6px 0 12px">Your tasks sync between devices, Telegram reminders keep working when the app is closed, and bank messages arrive by themselves. Only you can see your data.</div>
    <div class="btns" style="margin:0"><button class="btn main" id="sb_g" style="width:100%">Sign in with Google</button></div>
-   <div class="hint" style="margin:14px 0 4px"><b>Using Norie from your Home Screen?</b> Tap <b>Sign in with Google</b> (it opens Safari), choose <b>I use the Home Screen app</b>, then come back here and tap <b>Paste &amp; sign in</b>:</div>
+   <div class="hint" style="margin:14px 0 4px">Already have a code from another device? Paste it:</div>
    <div class="btns" style="margin:8px 0 0"><button class="btn" id="sb_p" style="width:100%">Paste &amp; sign in</button></div>
    <input id="sb_c" placeholder="…or type the code here" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px">
    <div class="btns" style="margin-top:12px"><button class="btn small" id="sb_x">Cancel</button><button class="btn main small" id="sb_o">Use code</button></div>`);
+  const L=o.querySelector('#sb_l');
+  if(L)L.onclick=async()=>{try{await navigator.clipboard.writeText(link);flash('Link copied — paste it in Safari')}catch(_){L.insertAdjacentHTML('afterend','<div class="hl" style="word-break:break-all;font-size:12px;margin-top:8px">'+esc(link)+'</div>')}};
   o.querySelector('#sb_p').onclick=async()=>{
     let t='';try{t=await navigator.clipboard.readText()}catch(_){flash('Paste was blocked — type or paste the code below');return}
     const ok=await codeSignIn(t);if(ok)o.remove();
   };
   o.querySelector('#sb_x').onclick=()=>o.remove();
-  o.querySelector('#sb_g').onclick=googleSignIn;
+  const G=o.querySelector('#sb_g');if(G)G.onclick=googleSignIn;
   o.querySelector('#sb_o').onclick=async()=>{const ok=await codeSignIn(o.querySelector('#sb_c').value);if(ok)o.remove()};
 }
 function showHandoff(s){
