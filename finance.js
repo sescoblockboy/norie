@@ -111,7 +111,7 @@ function setMode(m){
 }
 
 /* ---------- state ---------- */
-const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];S.fin.wi=Array.isArray(S.fin.wi)?S.fin.wi:[];S.fin.pay=Array.isArray(S.fin.pay)?S.fin.pay:[];return S.fin};
+const F=()=>{S.fin=(S.fin&&Array.isArray(S.fin.tx))?S.fin:{tx:[],del:{}};S.fin.del=S.fin.del||{};S.fin.subs=Array.isArray(S.fin.subs)?S.fin.subs:[];S.fin.wi=Array.isArray(S.fin.wi)?S.fin.wi:[];S.fin.pay=Array.isArray(S.fin.pay)?S.fin.pay:[];S.fin.zero=S.fin.zero||{on:false,u:0};return S.fin};
 const hsh=s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36)};
 const ETB=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const ETB0=v=>Math.round(Number(v)).toLocaleString('en-US');
@@ -171,6 +171,7 @@ mergeStates=function(a,b){
   const sm=new Map();
   [...(fb.subs||[]),...(fa.subs||[])].forEach(x=>{if(del[x.id])return;const old=sm.get(x.id);if(!old||(x.u||0)>=(old.u||0))sm.set(x.id,x)});
   o.fin={tx:[...m.values()].sort((x,y)=>y.ts-x.ts),del,subs:[...sm.values()].sort((x,y)=>x.id<y.id?-1:1)};
+  o.fin.zero=((fa.zero&&fa.zero.u)||0)>=((fb.zero&&fb.zero.u)||0)?(fa.zero||{on:false,u:0}):(fb.zero||{on:false,u:0});
   {const pm=new Map();[...(fb.pay||[]),...(fa.pay||[])].forEach(x=>{if(del[x.id])return;const old=pm.get(x.id);if(!old||(x.u||0)>=(old.u||0))pm.set(x.id,x)});o.fin.pay=[...pm.values()].sort((x,y)=>x.id<y.id?-1:1)}
   {const wm=new Map();[...(fb.wi||[]),...(fa.wi||[])].forEach(x=>{if(!del[x.id])wm.set(x.id,x)});o.fin.wi=[...wm.values()]}
   {const pa=fa.plan,pb=fb.plan,pl=(pa&&(!pb||(pa.u||0)>=(pb.u||0)))?pa:pb;if(pl&&pl.end>Date.now()||pl&&pl.cleared)o.fin.plan=pl}
@@ -452,19 +453,20 @@ const PLAN_DAYS=30;
 const planEnd=()=>Date.now()+PLAN_DAYS*DAY;
 function planInfo(A){
   const f=F(),B=A.B,now=Date.now(),t0=sod(now);
-  let p=f.plan&&f.plan.end>now?f.plan:null;
+  const zero=!!(f.zero&&f.zero.on);
+  let p=!zero&&f.plan&&f.plan.end>now?f.plan:null;
   const end=p?p.end:planEnd();
-  const base=p?p.total:(B.n?B.tot:null);
-  if(base==null||!(base>0))return null;
+  const base=p?p.total:(zero?0:(B.n?B.tot:null));
+  if(base==null||(!zero&&!(base>0)))return null;
   const wiList=F().wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
   const start=p?p.start:now,spendable=total*.6,reserve=total*.4;
   const out=(from)=>f.tx.filter(t=>t.dir==='out'&&!isX(t)&&t.ts>=from).reduce((a,t)=>a+t.amt,0);
   const remaining=Math.max(0,spendable-(p?out(start):0));
   const daysLeft=Math.max(1,Math.ceil((end-now)/DAY));
-  const spentToday=out(Math.max(t0,start));
+  const spentToday=zero?0:out(Math.max(t0,start));
   const allow=(remaining+spentToday)/daysLeft;
   const lasts=A.dailyOut>0?remaining/A.dailyOut:null;
-  return{saved:!!p,at:p?p.start:null,total,base,wi,wiList,spendable,reserve,remaining,daysLeft,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut};
+  return{zero,saved:!!p,at:p?p.start:null,total,base,wi,wiList,spendable,reserve,remaining,daysLeft,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut};
 }
 function planHTML(A){
   const P=planInfo(A);
@@ -477,11 +479,11 @@ function planHTML(A){
   <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>ETB per day · ${P.daysLeft} days</small></div>
   <div class="fspr"><div><small>Spend 60%</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup 40%</small><b class="pos">${M(ETB0(P.reserve))}</b></div><div><small>Left today</small><b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.leftToday))}</b></div></div>
   <div class="fbar"><i style="width:${usedPct}%"></i></div>
-  <p class="fcap" style="margin:6px 2px">${P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
+  <p class="fcap" style="margin:6px 2px">${P.zero?`Starting from <b>0</b>${P.wi>0?` + ${M(ETB0(P.wi))} what-if = <b>${M(ETB0(P.total))}</b>`:' — add an amount to plan from scratch'}`:P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
   ${tip}
-  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></div>
+  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><span style="display:flex;gap:6px"><button class="chip${P.zero?' on':''}" data-fzero>${P.zero?'Use real balance':'Start from 0'}</button><button class="chip on" data-fwi aria-label="Add a what-if amount">+ Add</button></span></div>
     ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove">×</button></span>`).join('')}</div>`:''}</div>
-  <div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div></div>`;
+  ${P.zero?'':`<div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div>`}</div>`;
 }
 
 function finWhatIf(){
@@ -556,10 +558,10 @@ function weekBars(){
   const sum=l=>l.reduce((x,t)=>x+t.amt,0),mx=Math.max(1,...a.map(x=>sum(x.out)));
   const cur=a.find(x=>x.d===sel)||a[6],tot=sum(cur.out),inn=sum(cur.inn);
   const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i style="height:${Math.max(4,Math.round(sum(x.out)/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
-  const items=cur.out.slice().sort((p,q)=>q.amt-p.amt).slice(0,4).map(t=>`<div class="fsr" style="cursor:default"><div class="fm"><div class="ft">${esc(t.who||'Money out')}</div><div class="fs">${fmtT(t.ts)}</div></div><div class="fa neg">${M('−'+ETB(t.amt))}</div></div>`).join('');
+  const xs=f.tx.filter(t=>t.ts>=cur.d&&t.ts<cur.d+DAY&&t.dir==='out'&&isX(t)),items=cur.out.slice().sort((p,q)=>q.ts-p.ts).map(t=>`<div class="fsr" style="cursor:default"><div class="fm"><div class="ft">${esc(t.who||'Money out')}</div><div class="fs">${fmtT(t.ts)}</div></div><div class="fa neg">${M('−'+ETB(t.amt))}</div></div>`).join('');
   const detail=`<div class="fday"><div class="fdh"><b>${esc(dayLabel(cur.d))}</b><span>${new Date(cur.d).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span></div>
     <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Payments</small><b>${cur.out.length}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div></div>
-    ${items?`<div class="fsl" style="margin-top:4px">${items}</div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}</div>`;
+    ${items?`<div class="fsl" style="margin-top:4px">${items}</div><div class="fdt"><span>Total</span><b class="neg">${M('−'+ETB(tot))}</b></div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}${xs.length?`<p class="fcap" style="margin:6px 2px 0">Not counted: ${xs.length} own transfer${xs.length>1?'s':''} (${M(ETB0(xs.reduce((a,t)=>a+t.amt,0)))}) between your banks.</p>`:''}</div>`;
   return bars+detail;
 }
 function vAdvice(){
@@ -782,6 +784,7 @@ $('#app').addEventListener('click',async e=>{
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
+  if(T.closest('[data-fzero]')){const f=F();f.zero={on:!f.zero.on,u:Date.now()};save();render();flash(f.zero.on?'Starting from 0 — add an amount':'Back to your real balance');return}
   if(T.closest('[data-fpayadd]')){finPayAsk();return}
   const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
   const fsb=T.closest('[data-fsub]');if(fsb){const id=fsb.dataset.fsub;keep(()=>{selSub=selSub===id?null:id});return}
@@ -884,6 +887,7 @@ css.textContent=`
 .fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
 .fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
 .fwp{margin-top:10px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.7);display:grid;gap:5px}.fwp div{display:flex;justify-content:space-between;font-size:13.5px}.fwp span{color:var(--muted);font-weight:600}.fwp u{text-decoration:none;color:var(--pink);font-size:16px}.fwp div:last-child{border-top:1px dashed rgba(0,0,0,.12);padding-top:6px}
+.fdt{display:flex;justify-content:space-between;padding:8px 4px 0;border-top:1px dashed rgba(0,0,0,.14);margin-top:4px;font-size:14px}.fdt span{color:var(--muted);font-weight:700}
 .fday{margin-top:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65)}.fdh{display:flex;justify-content:space-between;align-items:baseline}.fdh b{font-size:15px}.fdh span{font-size:12px;color:var(--muted);font-weight:600}
 .fspr.f4 b{font-size:13.5px}.fspr.f4>div{padding-left:2px;padding-right:2px}
 .fpt{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:7px 6px;font-size:12px;align-items:center;margin:8px 0 6px}.fpt i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);text-align:right}.fpt span{color:var(--muted);font-weight:600;font-size:12px}.fpt b{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
