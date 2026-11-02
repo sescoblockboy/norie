@@ -251,7 +251,30 @@ function showCode(){
 }
 
 const _vs=vSettings;
-vSettings=function(){return _vs()+acctHTML()};
+/* Settings order: Account, Profile, Telegram, Finance & sync mode, then the rest. Tidies the account-mode cards. */
+function orderSettings(html){
+  const box=document.createElement('div');box.innerHTML=html;
+  const cards=[...box.children].filter(n=>n.matches&&n.matches('details.setrow'));
+  const key=n=>{const t=(n.querySelector('summary')||{textContent:''}).textContent;
+    return /Account/.test(t)?'acct':/Profile/.test(t)?'prof':/Telegram/.test(t)?'tg':/Finance/.test(t)?'fin':/Alerts/.test(t)?'alert':/Calendar/.test(t)?'cal':/Cloud Sync/.test(t)?'cloud':/Backup/.test(t)?'bak':'x'};
+  const rank={acct:0,prof:1,tg:2,fin:3,alert:4,cal:5,cloud:6,bak:7,x:8};
+  const on=signedIn();
+  cards.forEach(n=>{
+    const k=key(n);
+    if(k==='cloud'&&on){n.remove();return}                       /* the Apps Script URL box is not used with an account */
+    if(k==='cal'&&on){
+      const w=n.querySelector('.setwrap'),b=n.querySelector('summary .stb');
+      if(b){b.id='st_cal_acct';b.className='stb';b.textContent='Not in account mode'}
+      if(w)w.innerHTML='<p>Calendar alarms are not part of account sync yet. Your Telegram reminders still ring when Norie is closed.</p>';
+    }
+    if(k==='acct'&&!on)n.setAttribute('open','');
+    n._k=k;
+  });
+  const live=cards.filter(n=>n.parentNode===box).sort((a,b)=>rank[a._k]-rank[b._k]);
+  live.forEach(n=>box.appendChild(n));
+  return box.innerHTML;
+}
+vSettings=function(){return orderSettings(_vs()+acctHTML())};
 function acctHTML(){
   const on=signedIn(),key=on?(S.settings.syncId||''):'';
   const badge=on?['Signed in ✓','ok']:['Signed out',''];
