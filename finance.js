@@ -90,6 +90,7 @@ const SHORTCUT_LINK='';
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
+const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/a93f484f2ce34d2b9f6ff18625389b53';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
 const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
    People who already have a cloud URL stay on Auto; everybody else starts on Private. */
@@ -740,16 +741,17 @@ function setupHTML(){
      <div class="btns"><button class="btn main small" id="fin_clip">Import from clipboard</button><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
      <div class="hint" style="margin-top:8px"><b>Telegram in Private mode:</b> a bot cannot schedule messages, so reminders reach Telegram only while Norie is open. Switch to Auto if you want them while the app is closed.</div>`;
   const cloud=`
-     <p><b>Auto mode.</b> Bank messages arrive by themselves, and Telegram reminders fire even when Norie is closed. Your data is stored in the shared Norie cloud under your private ID.</p>
-     ${SHORTCUT_LINK?`<div class="btns" style="margin-top:4px"><a class="btn main" id="fin_install" href="${esc(SHORTCUT_LINK)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Install the shortcut</a></div>`:`<div class="hl">The shortcut link isn’t added yet.</div>`}
+     <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working even when Norie is closed. Your data is saved to your private account (Settings → Account).</p>
      <ol class="steps">
-       <li>Tap <b>Install the shortcut</b>. Your private ID is copied for you.</li>
-       <li>When Shortcuts asks for your ID, tap the box, choose <b>Paste</b>, then <b>Add Shortcut</b>.</li>
-       <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.</li>
+       <li>Sign in first: Settings → <b>Account</b> → Sign in.</li>
+       <li>Install the shortcuts: ${btn(SHORTCUT_LINK_MAKE,'Make Queue',0)} ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)} ${btn(SHORTCUT_LINK_SEND,'Send queue',1)}</li>
+       <li>Open <b>Make Queue</b> and tap ▶ once.</li>
+       <li>Open <b>Norie send queue global</b> → ••• → in the <b>Get contents of URL</b> step, set <b>p_secret</b> to your key: Settings → Account → More → <b>Copy shortcut key</b> (or the button below). Paste it, tap Done.</li>
+       <li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions, in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.</li>
      </ol>
-     <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" id="fin_copyid">Copy my ID</button></div>
-     <div class="hl" id="fin_msg">Your ID is private and random: <b>${esc(getUserKey())}</b></div>
-     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button><button class="btn small danger" id="fin_reset">New sync ID</button></div>
+     <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" id="fin_copyid">Copy my key</button></div>
+     <div class="hl" id="fin_msg">Your private key is in Settings → Account → More. Never share it.</div>
+     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button>${(window.NorieAccount&&window.NorieAccount.signedIn())?'':'<button class="btn small danger" id="fin_reset">New sync ID</button>'}</div>
      <div class="hint" style="margin-top:8px">Privacy: the person who runs Norie’s cloud could technically see stored data, so only use Auto if you trust them.</div>`;
   return `<details class="glass setrow" id="finsetup">
    <summary><b class="lb">${ic('dollar')}Finance &amp; sync mode</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
@@ -803,7 +805,7 @@ $('#app').addEventListener('click',async e=>{
   const md=T.closest('[data-fmode]');if(md){setMode(md.dataset.fmode);return}
   if(T.id==='fin_clip'){finClipImport();return}
   if(T.id==='fin_copyurl'){copy(S.settings.gasUrl||'','URL copied');return}
-  if(T.id==='fin_copyid'){copy(getUserKey(),'ID copied');return}
+  if(T.id==='fin_copyid'){copy(getUserKey(),'Key copied');return}
   if(T.closest('#fin_install')){try{navigator.clipboard.writeText(getUserKey())}catch(_){}flash('Your ID is copied — paste it when Shortcuts asks');return}
   if(T.id==='fin_reset'){
     if(!confirm('Make a brand-new private sync ID for this phone? Your tasks stay on this phone and are uploaded under the new ID. You will need to copy the setup code again.'))return;
