@@ -280,6 +280,7 @@ a{color:var(--pink)}
 #dtb .sw2.on{outline:2px solid var(--pink)}
 #dtb .draw-more{position:absolute;top:48px;left:0;width:min(300px,calc(100vw - 20px));display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:11px;border:1px solid rgba(255,255,255,.9);border-radius:18px;background:rgba(255,250,243,.97);box-shadow:0 12px 30px rgba(80,40,50,.2);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);pointer-events:auto}
 #dtb .draw-more[hidden]{display:none!important}
+#dtb .draw-room-status .rdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:-.5px;background:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.18)}#dtb .draw-room-status .rdot.g{background:#2fb673;box-shadow:0 0 0 3px rgba(47,182,115,.2)}#dtb .draw-room-status .rdot.a{background:#e8a83a;box-shadow:0 0 0 3px rgba(232,168,58,.2)}
 #dtb .draw-room-status{grid-column:1/-1;font-size:11.5px;line-height:1.35;color:var(--muted);padding:5px 4px 1px;overflow-wrap:anywhere}
 @media(max-width:430px){#dtb{left:5px;right:5px}#dtb .drawbar{gap:4px;padding:4px}#dtb .chip{padding:8px 9px;font-size:12px}#dtb select[data-draw-tool]{min-width:92px;max-width:108px}#dtb select[data-draw-col]{min-width:82px;max-width:96px}#dtb .sw2{width:20px;height:20px}}
 /* ---- Draw toolbar v2: icon dock ---- */
@@ -1583,7 +1584,11 @@ const imageCache=new Map();
 function cloneItem(it){const o={...it};if(it.p)o.p=it.p.slice();if(it.i)o.i=it.i.map(cloneItem);return o}
 function ensureItemIds(items){for(const it of items){if(!it.id)it.id='di_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);if(it.t==='g')ensureItemIds(it.i||[])}}
 function drawState(){ensureItemIds(root());return {items:root().map(cloneItem),links:JSON.parse(JSON.stringify(links()))}}
-function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('drawRoomStatus');if(el)el.textContent=msg}
+function roomStatusHTML(msg){
+  const c=/^Live/.test(msg)?'g':/Connecting|Joining|syncing|Joined/.test(msg)?'a':'r';   /* green = connected, amber = connecting, red = disconnected */
+  return '<i class="rdot '+c+'"></i>'+esc(msg);
+}
+function updateRoomStatus(msg){roomStatus=msg;const el=document.getElementById('drawRoomStatus');if(el)el.innerHTML=roomStatusHTML(msg)}
 function scheduleRoomPush(delay=150){if(!roomCode||readOnly)return;roomPending=true;clearTimeout(roomPushTimer);roomPushTimer=setTimeout(pushRoom,delay)}
 function drawSave(){ensureItemIds(root());save();scheduleRoomPush()}
 
@@ -2268,7 +2273,7 @@ function toolbar(){
  </div>
  <div class="draw-more" ${moreOpen?'':'hidden'}>
   ${ab('rep','Report','list')}${ab('room',roomCode?esc(roomCode):'Live room','users',!!roomCode)}${ab('view',readOnly?'Exit see-only':'See only','eye',readOnly)}${ab('new','New','plus')}${ab('project','Save','save')}${ab('openproject','Projects','folder')}
-  <div id="drawRoomStatus" class="draw-room-status" role="status">${esc(roomStatus)}</div>
+  <div id="drawRoomStatus" class="draw-room-status" role="status">${roomStatusHTML(roomStatus)}</div>
  </div>`;
 }
 window.mountDraw=function(){
