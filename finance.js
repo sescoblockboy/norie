@@ -482,10 +482,9 @@ function planHTML(A){
   <div class="fbar"><i style="width:${usedPct}%"></i></div>
   <p class="fcap" style="margin:6px 2px">${P.zero?`Starting from <b>0</b>${P.wi>0?` + ${M(ETB0(P.wi))} what-if = <b>${M(ETB0(P.total))}</b>`:' — add an amount to plan from scratch'}`:P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
   ${tip}
-  <div class="fwi"><div class="fwih"><b>What if I earn more?</b></div>
-    <div class="fwq">${[5000,10000,20000,50000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other…</button></div>
-    ${P.wiList.length?`<div class="fwl">${P.wiList.map(x=>`<div class="fwr"><span>Extra money</span><b class="pos">+${M(ETB0(x.amt))}</b><button class="fwx" data-fwix="${x.id}" aria-label="Remove ${ETB0(x.amt)}">Remove</button></div>`).join('')}</div>`:''}
-    <button class="fz${P.zero?' on':''}" data-fzero><i></i><span>${P.zero?'Starting from 0 · tap to use real balance':'Start from 0 (ignore my balance)'}</span></button></div>
+  <div class="fwi"><div class="fwih"><b>What if I earn more?</b><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'Start from 0'}</button></div>
+    <div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button></div>
+    ${P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div>
   ${P.zero?'':`<div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div>`}</div>`;
 }
 
@@ -730,29 +729,28 @@ function setupHTML(){
   const badge=!auto?['Private',''] :st==='ok'?['Auto ✓','ok']:st==='old'?['Cloud update needed','no']:['Auto',''];
   const btn=(href,label,primary)=>href?`<a class="btn ${primary?'main ':''}small" href="${esc(href)}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">${label}</a>`:'';
   const modeBar=`<div class="fspr" style="margin:0 0 12px"><div data-fmode="private" style="cursor:pointer;${!auto?'background:var(--pink);color:#fff':''}"><b>Private</b><br><small>stays on this phone</small></div><div data-fmode="auto" style="cursor:pointer;${auto?'background:var(--pink);color:#fff':''}"><b>Auto</b><br><small>uses Norie cloud</small></div></div>`;
+  const st_=(t,b)=>`<li class="fst"><div>${t}</div>${b?`<div class="fstb">${b}</div>`:''}</li>`;
   const priv=`
-     <p><b>Private mode.</b> Your tasks and bank messages never leave this phone. No account, no cloud.</p>
-     <ol class="steps">
-       <li>Install the three shortcuts: ${btn(SHORTCUT_LINK_MAKE,'Make Queue',0)} ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)} ${btn(SHORTCUT_LINK_READ,'Norie Read Queue',0)}</li>
-       <li>Open <b>Make Queue</b> in the Shortcuts app and tap ▶ once (it creates the file that stores your messages).</li>
-       <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.</li>
-       <li>In Norie’s Finance tab tap <b>Import new SMS</b> whenever you want your latest messages in.</li>
+     <p><b>Private mode.</b> Everything stays on this phone. No account, no cloud.</p>
+     <ol class="fstl">
+       ${st_('Install the three shortcuts.',btn(SHORTCUT_LINK_MAKE,'Make Queue',0)+btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_READ,'Read Queue',0))}
+       ${st_('Open <b>Make Queue</b> in Shortcuts and tap ▶ once.')}
+       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie Bank SMS</b>.')}
+       ${st_('Back here, tap <b>Import new SMS</b> whenever you want your latest messages.')}
      </ol>
-     <div class="btns"><button class="btn main small" id="fin_clip">Import from clipboard</button><button class="btn small" data-fpaste>Paste an SMS manually</button></div>
-     <div class="hint" style="margin-top:8px"><b>Telegram in Private mode:</b> a bot cannot schedule messages, so reminders reach Telegram only while Norie is open. Switch to Auto if you want them while the app is closed.</div>`;
+     <div class="btns"><button class="btn main small" id="fin_clip">Import from clipboard</button><button class="btn small" data-fpaste>Paste an SMS</button></div>
+     <div class="hint" style="margin-top:8px">Telegram reminders arrive only while Norie is open in Private mode. Use Auto for reminders while the app is closed.</div>`;
   const cloud=`
-     <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working even when Norie is closed. Your data is saved to your private account (Settings → Account).</p>
-     <ol class="steps">
-       <li>Sign in first: Settings → <b>Account</b> → Sign in.</li>
-       <li>Install the shortcuts: ${btn(SHORTCUT_LINK_MAKE,'Make Queue',0)} ${btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)} ${btn(SHORTCUT_LINK_SEND,'Send queue',1)}</li>
-       <li>Open <b>Make Queue</b> and tap ▶ once.</li>
-       <li>Open <b>Norie send queue global</b> → ••• → in the <b>Get contents of URL</b> step, set <b>p_secret</b> to your key: Settings → Account → More → <b>Copy shortcut key</b> (or the button below). Paste it, tap Done.</li>
-       <li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions, in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.</li>
+     <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
+     <ol class="fstl">
+       ${st_('Sign in: Settings → <b>Account</b> (top of this page).')}
+       ${st_('Install the three shortcuts.',btn(SHORTCUT_LINK_MAKE,'Make Queue',0)+btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Send queue',1))}
+       ${st_('Open <b>Make Queue</b> in Shortcuts and tap ▶ once.')}
+       ${st_('Open <b>Norie send queue global</b> → ••• → in <b>Get contents of URL</b> set <b>p_secret</b> to your key, then Done.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.')}
      </ol>
-     <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" id="fin_copyid">Copy my key</button></div>
-     <div class="hl" id="fin_msg">Your private key is in Settings → Account → More. Never share it.</div>
-     <div class="btns"><button class="btn small" data-fpaste>Paste an SMS manually</button>${(window.NorieAccount&&window.NorieAccount.signedIn())?'':'<button class="btn small danger" id="fin_reset">New sync ID</button>'}</div>
-     <div class="hint" style="margin-top:8px">Privacy: the person who runs Norie’s cloud could technically see stored data, so only use Auto if you trust them.</div>`;
+     <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" data-fpaste>Paste an SMS</button>${(window.NorieAccount&&window.NorieAccount.signedIn())?'':'<button class="btn small danger" id="fin_reset">New sync ID</button>'}</div>
+     <div class="hl" id="fin_msg">Your key is private. Never share it.</div>`;
   return `<details class="glass setrow" id="finsetup">
    <summary><b class="lb">${ic('dollar')}Finance &amp; sync mode</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
    <div class="setwrap">
@@ -892,7 +890,9 @@ css.textContent=`
 .fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.3)}
 .fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
 .fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
-.fwq{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 2px}.fq{flex:1 1 calc(33% - 7px);min-height:42px;border:0;border-radius:14px;background:rgba(244,104,127,.13);color:var(--pink);font:inherit;font-weight:800;font-size:14px;cursor:pointer}.fq:active{transform:scale(.96)}.fq.oth{background:rgba(255,255,255,.8);color:var(--ink);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.fzc{border:0;border-radius:12px;padding:6px 11px;background:rgba(0,0,0,.07);color:var(--muted);font:inherit;font-weight:700;font-size:12px;cursor:pointer}.fzc.on{background:var(--pink);color:#fff}.fwc button{width:26px!important;height:26px!important}
+.fstl{list-style:none;padding:0;margin:10px 0;counter-reset:s}.fst{counter-increment:s;position:relative;display:flex;flex-direction:column;gap:8px;padding:10px 12px 10px 46px;margin-bottom:8px;border-radius:14px;background:rgba(255,255,255,.65);font-size:13.5px;line-height:1.45;color:var(--ink)}.fst::before{content:counter(s);position:absolute;left:12px;top:10px;width:24px;height:24px;border-radius:50%;background:var(--pink);color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center}.fstb{display:flex;flex-wrap:wrap;gap:8px}.fstb .btn{flex:1 1 auto;min-width:96px}
+.fwq{display:flex;gap:7px;margin:10px 0 2px}.fq{flex:1;min-height:40px;border:0;border-radius:14px;background:rgba(244,104,127,.13);color:var(--pink);font:inherit;font-weight:800;font-size:14px;cursor:pointer}.fq:active{transform:scale(.96)}.fq.oth{background:rgba(255,255,255,.8);color:var(--ink);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
 .fwl{margin-top:8px;display:grid;gap:6px}.fwr{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;background:rgba(255,255,255,.75);font-size:13.5px}.fwr span{flex:1;color:var(--muted);font-weight:600}.fwr b{font-size:15px}.fwx{min-height:34px;padding:0 12px;border:0;border-radius:11px;background:rgba(244,104,127,.14);color:var(--pink);font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}
 .fz{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin-top:8px;padding:0 12px;border:0;border-radius:14px;background:rgba(255,255,255,.7);font:inherit;font-weight:700;font-size:13.5px;color:var(--ink);text-align:left;cursor:pointer}.fz i{width:34px;height:20px;border-radius:12px;background:rgba(0,0,0,.18);position:relative;flex:none;transition:background .2s}.fz i::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}.fz.on i{background:var(--pink)}.fz.on i::after{transform:translateX(14px)}
 .fwp{margin-top:10px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.7);display:grid;gap:5px}.fwp div{display:flex;justify-content:space-between;font-size:13.5px}.fwp span{color:var(--muted);font-weight:600}.fwp u{text-decoration:none;color:var(--pink);font-size:16px}.fwp div:last-child{border-top:1px dashed rgba(0,0,0,.12);padding-top:6px}
