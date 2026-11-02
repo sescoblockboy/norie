@@ -1791,8 +1791,21 @@ function stopRoom(silent=false){
  },180);
 }
 
-addEventListener('pagehide',()=>{
- if(roomCode&&roomRole==='host')stopRoom();
+/* Switching apps / locking the phone must NOT end the room. When we come back: reconnect, grace period, re-sync. */
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState!=='visible'||!roomCode)return;
+ mqHostLastSeen=Date.now();
+ for(const l of mqLinks){try{if(!l.client.connected)l.client.reconnect()}catch(_){}}
+ setTimeout(()=>{
+  if(!roomCode)return;
+  if(roomRole==='host')pushHostStateNow();
+  else if(!roomPending)mqSend('e',{type:'hello'},{qos:0});
+ },900);
+});
+addEventListener('online',()=>{
+ if(!roomCode)return;
+ mqHostLastSeen=Date.now();
+ for(const l of mqLinks){try{if(!l.client.connected)l.client.reconnect()}catch(_){}}
 });
 
 async function startRoom(clean,role){
@@ -1810,8 +1823,11 @@ async function startRoom(clean,role){
   if(!roomCode){clearInterval(mqHostBeatInt);return}
   if(roomRole==='host'){
    mqSend('e',{type:'hb'},{qos:0});
-  }else if(mqGotState&&Date.now()-mqHostLastSeen>10000){
-   handleHostLeft();
+  }else if(mqGotState){
+   const age=Date.now()-mqHostLastSeen;
+   if(age>60000)handleHostLeft();
+   else if(age>12000)updateRoomStatus('Host connection lost — waiting for them to come back…');
+   else mqStatus();
   }
  },3500);
 
@@ -1820,18 +1836,11 @@ async function startRoom(clean,role){
   const opts={
    clientId:'norie_'+mqMe+'_'+Math.random().toString(36).slice(2,6),
    clean:true,
-   reconnectPeriod:2000,
+   reconnectPeriod:1500,
    connectTimeout:9000,
-   keepalive:15
+   keepalive:25
   };
-  if(role==='host'){
-   opts.will={
-    topic:mqTop()+'/e',
-    payload:JSON.stringify({id:'will_'+mqMe+'_'+Date.now(),from:mqMe,type:'close'}),
-    qos:0,
-    retain:false
-   };
-  }
+  /* (no last-will 'close' message: a single flaky relay used to tell everyone the host had left) */
   const c=l.client=mqtt.connect(url,opts);
   c.on('connect',()=>{
    if(roomCode!==clean)return;
@@ -1841,7 +1850,7 @@ async function startRoom(clean,role){
     mqStatus();
     if(role==='host'){
      pushHostStateNow();
-    }else if(!mqGotState){
+    }else if(!mqGotState||!roomPending){
      mqSend('e',{type:'hello'},{qos:0});
     }
     if(!mqAnnounced){
