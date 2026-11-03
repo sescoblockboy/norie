@@ -638,8 +638,11 @@ async function finPull(manual){
     return n;
   }catch(_){return 0}finally{pulling=false}
 }
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='fin_every'){S.settings.finEvery=+e.target.value;save();flash(+e.target.value?'Auto fetch: every '+(+e.target.value>=60?(+e.target.value/60)+' min':e.target.value+' s'):'Auto fetch off')}});
 /* check the inbox every ~4 s while Norie is open (it used to ride on a 25 s throttle, so new bank messages took up to ~30 s to show) */
-setInterval(()=>{if(!document.hidden&&hasCloud()&&!pulling)finPull()},4000);
+const everySec=()=>{const v=S.settings.finEvery;return v===0?0:(+v>0?+v:60)};
+let lastAuto=0;
+setInterval(()=>{const e=everySec();if(!e||document.hidden||!hasCloud()||pulling||Date.now()-lastAuto<e*1000)return;lastAuto=Date.now();finPull()},2000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')finPull(true)});
 const _lg=loadFromGas;
 loadFromGas=async function(force){const r=await _lg(force);finPull();return r};
@@ -763,6 +766,8 @@ function setupHTML(){
        ${st_('Open <b>Norie send queue global</b> → ••• → in <b>Get contents of URL</b> set <b>p_secret</b> to your key, then Done.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
        ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.')}
      </ol>
+     <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
+     <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
      <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" data-fpaste>Paste an SMS</button>${(window.NorieAccount&&window.NorieAccount.signedIn())?'':'<button class="btn small danger" id="fin_reset">New sync ID</button>'}</div>
      <div class="hl" id="fin_msg">Your key is private. Never share it.</div>`;
   return `<details class="glass setrow" id="finsetup">
