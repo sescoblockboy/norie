@@ -309,6 +309,15 @@ document.getElementById('app').addEventListener('click',async e=>{
   }
 });
 
-window.NorieAccount={signedIn,open:openSignIn,signOut,SENT};
+/* connection check for the Finance setup card: is the account signed in, is the key accepted by the server, how many messages are waiting */
+async function diag(){
+  const d={signedIn:signedIn(),email:(ses&&ses.email)||'',keyTail:'',keyOk:null,pending:null,err:''};
+  if(!d.signedIn)return d;
+  const key=S.settings.syncId||'';d.keyTail=key.slice(-4);
+  try{const r=await raw('/rest/v1/rpc/sms_ingest',{method:'POST',body:{p_secret:key}});d.keyOk=!!(r.json&&r.json.status==='ok');if(r.json&&r.json.message)d.err=r.json.message}catch(e){d.err='no connection'}
+  try{const r=await api('/rest/v1/sms_inbox?select=id&limit=100');if(r.ok&&Array.isArray(r.json))d.pending=r.json.length}catch(_){}
+  return d;
+}
+window.NorieAccount={signedIn,open:openSignIn,signOut,SENT,diag};
 window.__sb={ses:()=>ses,codeSignIn,finishLogin};
 })();
