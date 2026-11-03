@@ -147,13 +147,19 @@ function repairAll(){
   if(n)save();
   return n;
 }
+const SKK='norie.fin.skip';
+const skipGet=()=>{try{return JSON.parse(localStorage.getItem(SKK)||'[]')}catch(_){return[]}};
+const skipSet=a=>{try{localStorage.setItem(SKK,JSON.stringify(a.slice(0,40)))}catch(_){}};
+function skipAdd(why_,it,can){const a=skipGet();a.unshift({w:why_,t:String(it.text||'').slice(0,500),f:it.from||'',ts:+it.ts||Date.now(),can:!!can});skipSet(a)}
 function ingest(items){
   const f=F(),have=new Set(f.tx.map(t=>t.id));let added=0,dup=0,bad=0,reason='';
   for(const it of items||[]){
-    const p=parse(it.text,it.from);if(!p){bad++;if(!reason)reason=why(it.text,it.from);continue}
+    const p=parse(it.text,it.from);if(!p){bad++;const w0=why(it.text,it.from);if(!reason)reason=w0;skipAdd('Not read: '+w0,it);continue}
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
     p.ts=+it.ts||p.when||Date.now();delete p.when;
-    if(have.has(p.id)||f.del[p.id]||f.tx.some(t=>same(p,t))){dup++;continue}
+    if(have.has(p.id)){dup++;continue}
+    if(f.del[p.id]){dup++;skipAdd('You deleted this one earlier',it,0);continue}
+    if(!it.force&&f.tx.some(t=>same(p,t))){dup++;skipAdd('Looks the same as an earlier transaction (same bank, type and amount, close in time)',it,1);continue}
     fixDir(p,f.tx);
     f.tx.push(p);have.add(p.id);added++;
   }
@@ -546,7 +552,7 @@ function vHome(){
     <div class="fmr"><span>${ic('arrowDown',13)}${hide?'•••':'+'+ETB(s.i)}</span><span>${ic('arrowUp',13)}${hide?'•••':'−'+ETB(s.o)}</span><i>this month</i></div>
     <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
   </div>
-  <div class="fact">${isAuto()?`<button class="chip" data-ffetch>${ic('save',14)}Fetch new SMS</button>`:`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
+  <div class="fact">${isAuto()?`<button class="chip" data-ffetch>${ic('save',14)}Fetch new SMS</button>`:`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button>${skipGet().length?`<button class="chip" data-fskip>Skipped (${skipGet().length})</button>`:''}</div>
   ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up automatic capture</a>.</p>`:''}
   <div class="fplus glass" data-fgo="advice"><div class="pl">${ic('plus',22)}</div><div><b>Smart advisor</b><small>Forecast, subscriptions &amp; money tips</small></div></div>`;
 }
@@ -631,6 +637,7 @@ async function finPull(manual){
     if(!r||r.status==='error'||!Array.isArray(r.items)){stSet('old');return 0}
     stSet('ok');
     if(!r.items.length)return 0;
+    r.items.filter(x=>!SENDER_OK(x.from)).forEach(x=>skipAdd('Sender “'+x.from+'” is not CBE / 127 / Awash',x,0));
     const n=ingest(r.items.filter(x=>SENDER_OK(x.from))).added;
     gasCall({action:'smsack',ids:r.items.map(x=>x.id)}).catch(()=>{});
     if(n){if(tab==='finance'&&!isTyping()&&!sheetOpen())render();flash('Finance: '+n+' new transaction'+(n>1?'s':''))}
@@ -720,6 +727,21 @@ function finRunLocal(){
   try{sessionStorage.setItem('finwait','1')}catch(_){}
   location.href='shortcuts://run-shortcut?name='+encodeURIComponent(READ_NAME);
 }
+function finSkipped(){
+  let o=document.getElementById('finskip');if(o)o.remove();
+  o=document.createElement('div');o.id='finskip';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  const a=skipGet();
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(400px,100%);max-height:80vh;overflow:auto"><b style="font-size:18px">Messages Norie skipped</b>
+  <div class="hint" style="margin:6px 0 10px">These reached your account but were not added, and why.</div>
+  ${a.length?a.map((x,i)=>`<div style="padding:9px 0;border-top:1px solid rgba(0,0,0,.08)"><div style="font-size:12.5px;font-weight:700;color:var(--pink)">${esc(x.w)}</div><div style="font-size:12.5px;margin:3px 0;word-break:break-word">${esc(x.t)}</div>${x.can?`<button class="btn small" data-skadd="${i}">Add anyway</button>`:''}</div>`).join(''):'<div class="hint">Nothing skipped.</div>'}
+  <div class="btns" style="margin-top:12px">${a.length?'<button class="btn small" id="sk_clr">Clear</button>':''}<button class="btn main small" id="sk_c">Close</button></div></div>`;
+  document.body.append(o);
+  o.addEventListener('click',e=>{if(e.target===o)o.remove()});
+  o.querySelector('#sk_c').onclick=()=>o.remove();
+  const c=o.querySelector('#sk_clr');if(c)c.onclick=()=>{skipSet([]);o.remove();render()};
+  o.querySelectorAll('[data-skadd]').forEach(b=>b.onclick=()=>{const l=skipGet(),x=l.splice(+b.dataset.skadd,1)[0];skipSet(l);const r=ingest([{text:x.t,from:x.f,ts:x.ts,force:1}]);flash(r.added?'Added ✓':'Could not add');o.remove();render();if(skipGet().length)finSkipped()});
+}
 function finReadyAsk(){
   let o=document.getElementById('finready');if(o)o.remove();
   o=document.createElement('div');o.id='finready';
@@ -800,6 +822,7 @@ $('#app').addEventListener('click',async e=>{
   const fx=T.closest('[data-ftx]');
   if(fx){if(confirm('Delete this transaction?')){const f=F();f.del[fx.dataset.ftx]=Date.now();f.tx=f.tx.filter(t=>t.id!==fx.dataset.ftx);save();render()}return}
   if(T.closest('[data-fsetup]')){e.preventDefault();tab='settings';render();setTimeout(()=>{const d=document.getElementById('finsetup');if(d){d.open=true;d.scrollIntoView({block:'start'})}},60);return}
+  if(T.closest('[data-fskip]')){finSkipped();return}
   if(T.closest('[data-fsubadd]')){finSubAsk();return}
   const keep=fn=>{const y=scrollY;fn();render();scrollTo(0,y)};
   if(T.closest('[data-fwi]')){finWhatIf();return}
