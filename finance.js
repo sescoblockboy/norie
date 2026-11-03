@@ -535,7 +535,7 @@ function vHome(){
     <div class="fmr"><span>${ic('arrowDown',13)}${hide?'•••':'+'+ETB(s.i)}</span><span>${ic('arrowUp',13)}${hide?'•••':'−'+ETB(s.o)}</span><i>this month</i></div>
     <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
   </div>
-  <div class="fact">${isAuto()?'':`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
+  <div class="fact">${isAuto()?`<button class="chip" data-ffetch>${ic('save',14)}Fetch new SMS</button>`:`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button></div>
   ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up automatic capture</a>.</p>`:''}
   <div class="fplus glass" data-fgo="advice"><div class="pl">${ic('plus',22)}</div><div><b>Smart advisor</b><small>Forecast, subscriptions &amp; money tips</small></div></div>`;
 }
@@ -613,7 +613,7 @@ const stSet=v=>{try{localStorage.setItem('petal.finsms',v)}catch(_){}};
 let pulling=false,lastPull=0;
 async function finPull(manual){
   if(pulling||!hasCloud()||!navigator.onLine)return 0;
-  if(!manual&&Date.now()-lastPull<25000)return 0;
+  if(!manual&&Date.now()-lastPull<3000)return 0;
   pulling=true;lastPull=Date.now();
   try{
     const r=await gasCall({action:'smspull'});
@@ -627,6 +627,9 @@ async function finPull(manual){
     return n;
   }catch(_){return 0}finally{pulling=false}
 }
+/* check the inbox every ~4 s while Norie is open (it used to ride on a 25 s throttle, so new bank messages took up to ~30 s to show) */
+setInterval(()=>{if(!document.hidden&&hasCloud()&&!pulling)finPull()},4000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')finPull(true)});
 const _lg=loadFromGas;
 loadFromGas=async function(force){const r=await _lg(force);finPull();return r};
 
@@ -788,6 +791,7 @@ $('#app').addEventListener('click',async e=>{
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
   const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
+  if(T.closest('[data-ffetch]')){const b=T.closest('[data-ffetch]');b.disabled=true;const t0=Date.now();const n=await finPull(true);b.disabled=false;flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Up to date ✓ ('+((Date.now()-t0)/1000).toFixed(1)+'s)');return}
   if(T.closest('[data-fzero]')){const f=F();f.zero={on:!f.zero.on,u:Date.now()};save();render();flash(f.zero.on?'Starting from 0 — add an amount':'Back to your real balance');return}
   if(T.closest('[data-fpayadd]')){finPayAsk();return}
   const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
@@ -827,6 +831,17 @@ $('#app').addEventListener('click',async e=>{
   }
   if(T.id==='fin_check'){
     const out=document.getElementById('fin_msg');
+    if(window.NorieAccount&&window.NorieAccount.diag&&(S.settings.gasUrl||'')===NorieAccount.SENT){
+      out.textContent='Checking…';
+      const d=await NorieAccount.diag(),b=document.getElementById('st_fin');
+      let m,ok=false;
+      if(!d.signedIn)m='✗ Not signed in. The app can’t receive anything until you sign in (Settings → Account).';
+      else if(d.keyOk===false)m='✗ Signed in as '+d.email+', but the server does not accept your key ('+(d.err||'bad key')+'). Use Settings → Account → More → Copy shortcut key, and paste exactly that into p_secret in “Norie send queue global”.';
+      else if(d.keyOk===null)m='✗ Could not reach the server — check your internet.';
+      else{ok=true;await finPull(true);m='✓ Signed in as '+d.email+'. Key ends …'+d.keyTail+' (the p_secret in your shortcut must end the same way). '+(d.pending?d.pending+' message(s) were waiting and have been fetched.':'Inbox is empty: nothing has reached your account yet. If your shortcut just ran, its upload failed — open “Norie send queue global”, tap ▶ and read the result.');}
+      out.textContent=m;if(b){b.textContent=ok?'Ready ✓':'Fix needed';b.className='stb '+(ok?'ok':'no')}
+      return;
+    }
     if(!hasCloud()){out.textContent='Set up Cloud Sync first (paste your Web App URL).';return}
     out.textContent='Checking…';
     await finPull(true);
