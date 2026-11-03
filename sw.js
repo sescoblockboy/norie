@@ -1,4 +1,4 @@
-const CACHE = 'norie-v30';
+const CACHE = 'norie-v31';
 const SHELL = ['./', './index.html', './finance.js', './cloud.js', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
