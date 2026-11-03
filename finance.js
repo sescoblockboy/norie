@@ -20,7 +20,13 @@ function bankOf(from,text){
   /* each bank's own signature wins (an Awash message can mention "Commercial Bank of Ethiopia" as the sender of the money) */
   if(/banking with cbe|cbe\.com\.et|mbreciept/i.test(tx))return 'cbe';
   if(/awash[_ ]?bank|awashbank|call 8980/i.test(tx))return 'awash';
-  if(/telebirr|ethio\s*telecom/i.test(tx))return 'telebirr';
+  /* a bank named after "from / to / via" is the OTHER side of a transfer (telebirr -> CBE), not the bank that sent this SMS */
+  const mine=k=>{const re=new RegExp(BANKS[k].t.source,'gi');let m;while((m=re.exec(tx))){if(!/\b(?:from|to|via|through|into|with)\s+(?:your\s+|my\s+|the\s+)?(?:own\s+)?$/i.test(tx.slice(Math.max(0,m.index-16),m.index)))return m.index}return -1};
+  const hasOwn=['telebirr','cbe','awash'].filter(k=>mine(k)>=0);
+  if(hasOwn.length===1)return hasOwn[0];
+  if(!hasOwn.length&&/\bacc(?:oun)?t\s*(?:no\.?\s*)?:?\s*\d\*{2,}\d+|\b1\*{3,}\d{3,}/i.test(tx))return 'cbe';
+  if(/telebirr|ethio\s*telecom/i.test(tx)&&hasOwn.indexOf('telebirr')>=0)return 'telebirr';
+  if(!hasOwn.length&&/telebirr|ethio\s*telecom/i.test(tx))return 'telebirr';
   let best=null,bi=1e9;
   for(const k in BANKS){const i=tx.search(BANKS[k].t);if(i>=0&&i<bi){bi=i;best=k}}
   if(!best)return null;
@@ -209,12 +215,17 @@ async function toggleHide(){
   if(!hide){lockNow();render();return}
   try{
     await faceUnlock();hide=false;render();
-    clearTimeout(hideT);hideT=setTimeout(()=>{lockNow();if(tab==='finance')render()},120000);
+    clearTimeout(hideT);hideT=setTimeout(()=>{lockNow();if(tab==='finance')render()},600000);
   }catch(e){
     flash(e&&e.message==='unsupported'?'Face ID isn’t available here — open Norie from your Home Screen icon':'Face ID cancelled — amounts stay hidden');
   }
 }
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&!hide){lockNow();if(tab==='finance')render()}});
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenAt=Date.now();return}
+  /* locks only if the app was away for over 2 minutes, so a quick switch to Messages or the shortcut doesn't ask Face ID again */
+  if(!hide&&hiddenAt&&Date.now()-hiddenAt>120000){lockNow();if(tab==='finance')render()}
+});
 Object.assign(ICONS,{arrowUp:_p('M12 19V5','m5 12 7-7 7 7'),arrowDown:_p('M12 5v14','m19 12-7 7-7-7'),chevL:_p('m15 18-6-6 6-6'),eyeOff:_p('M9.88 9.88a3 3 0 1 0 4.24 4.24','M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68','M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61','M2 2l20 20')});
 if(!ICONS.eye)ICONS.eye=_p('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z')+'<circle cx="12" cy="12" r="3"/>';
 /* a payment out of one of your banks that lands in another of your banks (same amount, within 15 min)
@@ -546,7 +557,7 @@ function vBanks(){
 function vBank(k){
   const f=F(),all=f.tx.filter(t=>t.bank===k),s=stats(all),b=latestBal(all);
   const list=dirF==='all'?all:all.filter(t=>t.dir===dirF);
-  return `${backBtn('home','Master card')}<h1>${BANKS[k].n}</h1><p class="sub">${b==null?'No balance yet':'Balance '+M(ETB(b))+' ETB'} · ${all.length} transactions</p>
+  return `${backBtn('banks','Your banks')}<h1>${BANKS[k].n}</h1><p class="sub">${b==null?'No balance yet':'Balance '+M(ETB(b))+' ETB'} · ${all.length} transactions</p>
   <div class="fsum glass"><div class="fs1"><small>Money in</small><b class="pos">${M('+'+ETB(s.i))}</b></div><div class="fs1"><small>Money out</small><b class="neg">${M('−'+ETB(s.o))}</b></div><div class="fs1"><small>Net · month</small><b>${M((s.i-s.o<0?'−':'')+ETB(Math.abs(s.i-s.o)))}</b></div></div>
   <div class="chips fchips">${[['all','All'],['in','In'],['out','Out']].map(([v,n])=>`<button class="chip ${dirF===v?'on':''}" data-fdir="${v}">${n}</button>`).join('')}</div>
   ${listHTML(list)}`;
