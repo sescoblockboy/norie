@@ -742,6 +742,34 @@ function finSkipped(){
   const c=o.querySelector('#sk_clr');if(c)c.onclick=()=>{skipSet([]);o.remove();render()};
   o.querySelectorAll('[data-skadd]').forEach(b=>b.onclick=()=>{const l=skipGet(),x=l.splice(+b.dataset.skadd,1)[0];skipSet(l);const r=ingest([{text:x.t,from:x.f,ts:x.ts,force:1}]);flash(r.added?'Added ✓':'Could not add');o.remove();render();if(skipGet().length)finSkipped()});
 }
+const FETCH_NAME='Norie Fetch Messages';
+function finFetchAsk(){
+  let o=document.getElementById('finfetch');if(o)o.remove();
+  let last=6;try{last=+localStorage.getItem('norie.fin.look')||6}catch(_){}
+  const opts=[[0.25,'15 min'],[1,'1 hour'],[3,'3 hours'],[6,'6 hours'],[12,'12 hours'],[24,'1 day'],[72,'3 days']];
+  o=document.createElement('div');o.id='finfetch';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">Fetch new SMS</b>
+  <div class="hint" style="margin:6px 0 10px">Look back how far in your Messages? Norie reads your bank texts from that time and adds the ones it is missing (nothing is added twice).</div>
+  <div class="chips" id="ff_ch">${opts.map(([v,n])=>`<button class="chip ${v===last?'on':''}" data-ffv="${v}">${n}</button>`).join('')}</div>
+  <div class="btns" style="margin-top:14px;flex-wrap:wrap"><button class="btn small" id="ff_i">Only check inbox</button><button class="btn main small" id="ff_g">Fetch</button></div>
+  <details style="margin-top:10px"><summary style="font-size:12.5px;font-weight:700;cursor:pointer">First time? Make the “${FETCH_NAME}” shortcut</summary>
+  <ol style="font-size:12.5px;line-height:1.5;padding-left:18px;margin:6px 0 0">
+   <li>Shortcuts → <b>+</b> → name it exactly <b>${FETCH_NAME}</b>.</li>
+   <li><b>Adjust Date</b>: Current Date, <b>Subtract</b> <b>Shortcut Input</b> <b>Hours</b>.</li>
+   <li><b>Find Messages</b> where <b>Date</b> is <b>after</b> (Adjusted Date) and <b>Content</b> contains <b>ETB</b>.</li>
+   <li><b>Repeat with Each</b> found message → inside: <b>Text</b> = Repeat Item, then a new line and <b>#####</b>. End Repeat.</li>
+   <li><b>Combine Text</b> (Repeat Results) with New Lines.</li>
+   <li><b>Get contents of URL</b> — copy it from <b>Norie send queue global</b> (same URL, headers and p_secret), but set <b>p_q</b> to the combined text.</li>
+  </ol></details></div>`;
+  document.body.append(o);
+  let pick=last;
+  o.addEventListener('click',e=>{if(e.target===o)o.remove();const c=e.target.closest('[data-ffv]');if(c){pick=+c.dataset.ffv;o.querySelectorAll('[data-ffv]').forEach(x=>x.classList.toggle('on',x===c))}});
+  o.querySelector('#ff_i').onclick=async()=>{o.remove();const t0=Date.now(),n=await finPull(true);flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Inbox is empty ('+((Date.now()-t0)/1000).toFixed(1)+'s)')};
+  o.querySelector('#ff_g').onclick=()=>{try{localStorage.setItem('norie.fin.look',String(pick))}catch(_){}
+    o.remove();flash('Opening Shortcuts…');
+    location.href='shortcuts://run-shortcut?name='+encodeURIComponent(FETCH_NAME)+'&input=text&text='+encodeURIComponent(String(pick))};
+}
 function finReadyAsk(){
   let o=document.getElementById('finready');if(o)o.remove();
   o=document.createElement('div');o.id='finready';
@@ -830,7 +858,7 @@ $('#app').addEventListener('click',async e=>{
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
   const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
-  if(T.closest('[data-ffetch]')){const b=T.closest('[data-ffetch]');b.disabled=true;const t0=Date.now();const n=await finPull(true);b.disabled=false;flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Up to date ✓ ('+((Date.now()-t0)/1000).toFixed(1)+'s)');return}
+  if(T.closest('[data-ffetch]')){finFetchAsk();return}
   if(T.closest('[data-fzero]')){const f=F();f.zero={on:!f.zero.on,u:Date.now()};save();render();flash(f.zero.on?'Starting from 0 — add an amount':'Back to your real balance');return}
   if(T.closest('[data-fpayadd]')){finPayAsk();return}
   const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
