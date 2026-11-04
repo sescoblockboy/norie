@@ -74,7 +74,8 @@ gasCall=async function(body){
       if(!r.ok||!Array.isArray(r.json))return{status:'error'};
       const Q=window.finQParse||(t=>[{from:'',text:t,ts:0}]);
       return{status:'ok',items:r.json.map(x=>{
-        const p=x.sender?{from:x.sender,text:x.body,ts:+x.ts||0}:(Q(x.body)[0]||{from:'',text:x.body,ts:0});
+        const direct=x.sender||(+x.ts>0&&!/#{5,}/.test(x.body));   /* one SMS sent straight from the shortcut (p_text) */
+        const p=direct?{from:x.sender||'',text:x.body,ts:+x.ts||0}:(Q(x.body)[0]||{from:'',text:x.body,ts:0});
         return{id:x.id,from:p.from||'',text:p.text,ts:p.ts||0};
       })};
     }
