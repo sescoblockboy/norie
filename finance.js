@@ -93,12 +93,12 @@ const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:25
    SHORTCUT_LINK   : the iCloud link of the "Norie Bank SMS" shortcut (Shortcuts → ••• → Share → Copy iCloud Link). */
 const NORIE_CLOUD_URL='';
 const SHORTCUT_LINK='';
-const SHORTCUT_LINK_SMS='';   /* iCloud link of the single "Norie SMS" shortcut (Get contents of URL only) */
+const SHORTCUT_LINK_CAPTURE='https://www.icloud.com/shortcuts/1478601c55ed49f48951b32bc5a83866';   /* "Norie Bank SMS": appends each bank message to queue.txt */
 const RPC_URL='https://medaaoiunclooqmmjrzq.supabase.co/rest/v1/rpc/sms_ingest',API_KEY='sb_publishable_Agv4PmjAqyrFtwYyCJTFbA_iY4ElXwv';
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
-const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/a93f484f2ce34d2b9f6ff18625389b53';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
+const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/eefe1b04f9fb4e94afad2910f6d1353f';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
 const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
    People who already have a cloud URL stay on Auto; everybody else starts on Private. */
@@ -785,13 +785,11 @@ function setupHTML(){
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
        ${st_('Sign in: Settings → <b>Account</b> (top of this page).')}
-       ${SHORTCUT_LINK_SMS?st_('Add the shortcut, then paste your key into <b>p_secret</b>.',btn(SHORTCUT_LINK_SMS,'Get “Norie SMS”',1)+'<button class="btn small" id="fin_copyid">Copy my key</button>'):`
-       ${st_('Shortcuts app → <b>+</b> → name it <b>Norie SMS</b> → add <b>Get contents of URL</b>.')}
-       ${st_('Set the URL to:','<button class="btn small" id="fin_copyrpc">Copy URL</button>')}
-       ${st_('Tap the arrow ›. Method: <b>POST</b>. Add header <b>apikey</b> = this, and header <b>Content-Type</b> = <b>application/json</b>.','<button class="btn small" id="fin_copyapi">Copy apikey</button>')}
-       ${st_('Request Body: <b>JSON</b>. Add a <b>Text</b> field <b>p_secret</b> = your key. Add another <b>Text</b> field <b>p_text</b> = the variable <b>Shortcut Input</b>.','<button class="btn small" id="fin_copyid">Copy my key</button>')}`}
-       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie SMS</b>. Tap its arrow and make sure <b>Input</b> is <b>Shortcut Input</b>.')}
-       ${st_('Done. Every bank text now goes straight to your account. Tap <b>Check connection</b> below to test.')}
+       ${st_('Add the two shortcuts (tap <b>Add Shortcut</b> in each).',btn(SHORTCUT_LINK_CAPTURE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Norie send queue global',1))}
+       ${st_('Open <b>Norie send queue global</b> → ••• → <b>Get contents of URL</b>. Paste your key into <b>p_secret</b> (the only thing to fill in; <b>apikey</b> is already there).','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Still in that shortcut, tap <b>▶</b> once. It creates your queue file and tests your key. If it shows an error, the key is wrong. Tap <b>Copy my key</b> again.')}
+       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.')}
+       ${st_('Done. Tap <b>Check connection</b> below to test.')}
      </ol>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
      <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
