@@ -93,6 +93,8 @@ const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:25
    SHORTCUT_LINK   : the iCloud link of the "Norie Bank SMS" shortcut (Shortcuts → ••• → Share → Copy iCloud Link). */
 const NORIE_CLOUD_URL='';
 const SHORTCUT_LINK='';
+const SHORTCUT_LINK_SMS='';   /* iCloud link of the single "Norie SMS" shortcut (Get contents of URL only) */
+const RPC_URL='https://medaaoiunclooqmmjrzq.supabase.co/rest/v1/rpc/sms_ingest',API_KEY='sb_publishable_Agv4PmjAqyrFtwYyCJTFbA_iY4ElXwv';
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
@@ -742,34 +744,6 @@ function finSkipped(){
   const c=o.querySelector('#sk_clr');if(c)c.onclick=()=>{skipSet([]);o.remove();render()};
   o.querySelectorAll('[data-skadd]').forEach(b=>b.onclick=()=>{const l=skipGet(),x=l.splice(+b.dataset.skadd,1)[0];skipSet(l);const r=ingest([{text:x.t,from:x.f,ts:x.ts,force:1}]);flash(r.added?'Added ✓':'Could not add');o.remove();render();if(skipGet().length)finSkipped()});
 }
-const FETCH_NAME='Norie Fetch Messages';
-function finFetchAsk(){
-  let o=document.getElementById('finfetch');if(o)o.remove();
-  let last=6;try{last=+localStorage.getItem('norie.fin.look')||6}catch(_){}
-  const opts=[[0.25,'15 min'],[1,'1 hour'],[3,'3 hours'],[6,'6 hours'],[12,'12 hours'],[24,'1 day'],[72,'3 days']];
-  o=document.createElement('div');o.id='finfetch';
-  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
-  o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(380px,100%)"><b style="font-size:18px">Fetch new SMS</b>
-  <div class="hint" style="margin:6px 0 10px">Look back how far in your Messages? Norie reads your bank texts from that time and adds the ones it is missing (nothing is added twice).</div>
-  <div class="chips" id="ff_ch">${opts.map(([v,n])=>`<button class="chip ${v===last?'on':''}" data-ffv="${v}">${n}</button>`).join('')}</div>
-  <div class="btns" style="margin-top:14px;flex-wrap:wrap"><button class="btn small" id="ff_i">Only check inbox</button><button class="btn main small" id="ff_g">Fetch</button></div>
-  <details style="margin-top:10px"><summary style="font-size:12.5px;font-weight:700;cursor:pointer">First time? Make the “${FETCH_NAME}” shortcut</summary>
-  <ol style="font-size:12.5px;line-height:1.5;padding-left:18px;margin:6px 0 0">
-   <li>Shortcuts → <b>+</b> → name it exactly <b>${FETCH_NAME}</b>.</li>
-   <li><b>Adjust Date</b>: Current Date, <b>Subtract</b> <b>Shortcut Input</b> <b>Hours</b>.</li>
-   <li><b>Find Messages</b> where <b>Date</b> is <b>after</b> (Adjusted Date) and <b>Content</b> contains <b>ETB</b>.</li>
-   <li><b>Repeat with Each</b> found message → inside: <b>Text</b> = Repeat Item, then a new line and <b>#####</b>. End Repeat.</li>
-   <li><b>Combine Text</b> (Repeat Results) with New Lines.</li>
-   <li><b>Get contents of URL</b> — copy it from <b>Norie send queue global</b> (same URL, headers and p_secret), but set <b>p_q</b> to the combined text.</li>
-  </ol></details></div>`;
-  document.body.append(o);
-  let pick=last;
-  o.addEventListener('click',e=>{if(e.target===o)o.remove();const c=e.target.closest('[data-ffv]');if(c){pick=+c.dataset.ffv;o.querySelectorAll('[data-ffv]').forEach(x=>x.classList.toggle('on',x===c))}});
-  o.querySelector('#ff_i').onclick=async()=>{o.remove();const t0=Date.now(),n=await finPull(true);flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Inbox is empty ('+((Date.now()-t0)/1000).toFixed(1)+'s)')};
-  o.querySelector('#ff_g').onclick=()=>{try{localStorage.setItem('norie.fin.look',String(pick))}catch(_){}
-    o.remove();flash('Opening Shortcuts…');
-    location.href='shortcuts://run-shortcut?name='+encodeURIComponent(FETCH_NAME)+'&input=text&text='+encodeURIComponent(String(pick))};
-}
 function finReadyAsk(){
   let o=document.getElementById('finready');if(o)o.remove();
   o=document.createElement('div');o.id='finready';
@@ -811,10 +785,13 @@ function setupHTML(){
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
        ${st_('Sign in: Settings → <b>Account</b> (top of this page).')}
-       ${st_('Install the three shortcuts.',btn(SHORTCUT_LINK_MAKE,'Make Queue',0)+btn(SHORTCUT_LINK_PRIVATE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Send queue',1))}
-       ${st_('Open <b>Make Queue</b> in Shortcuts and tap ▶ once.')}
-       ${st_('Open <b>Norie send queue global</b> → ••• → in <b>Get contents of URL</b> set <b>p_secret</b> to your key, then Done.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
-       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.')}
+       ${SHORTCUT_LINK_SMS?st_('Add the shortcut, then paste your key into <b>p_secret</b>.',btn(SHORTCUT_LINK_SMS,'Get “Norie SMS”',1)+'<button class="btn small" id="fin_copyid">Copy my key</button>'):`
+       ${st_('Shortcuts app → <b>+</b> → name it <b>Norie SMS</b> → add <b>Get contents of URL</b>.')}
+       ${st_('Set the URL to:','<button class="btn small" id="fin_copyrpc">Copy URL</button>')}
+       ${st_('Tap the arrow ›. Method: <b>POST</b>. Add header <b>apikey</b> = this, and header <b>Content-Type</b> = <b>application/json</b>.','<button class="btn small" id="fin_copyapi">Copy apikey</button>')}
+       ${st_('Request Body: <b>JSON</b>. Add a <b>Text</b> field <b>p_secret</b> = your key. Add another <b>Text</b> field <b>p_text</b> = the variable <b>Shortcut Input</b>.','<button class="btn small" id="fin_copyid">Copy my key</button>')}`}
+       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b> → <b>Run Shortcut</b> → <b>Norie SMS</b>. Tap its arrow and make sure <b>Input</b> is <b>Shortcut Input</b>.')}
+       ${st_('Done. Every bank text now goes straight to your account. Tap <b>Check connection</b> below to test.')}
      </ol>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
      <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
@@ -858,7 +835,7 @@ $('#app').addEventListener('click',async e=>{
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
   const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
-  if(T.closest('[data-ffetch]')){finFetchAsk();return}
+  if(T.closest('[data-ffetch]')){const b=T.closest('[data-ffetch]');b.disabled=true;const t0=Date.now();const n=await finPull(true);b.disabled=false;flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Up to date ✓ ('+((Date.now()-t0)/1000).toFixed(1)+'s)');return}
   if(T.closest('[data-fzero]')){const f=F();f.zero={on:!f.zero.on,u:Date.now()};save();render();flash(f.zero.on?'Starting from 0 — add an amount':'Back to your real balance');return}
   if(T.closest('[data-fpayadd]')){finPayAsk();return}
   const fpy=T.closest('[data-fpay]');if(fpy){finPayAsk(F().pay.find(z=>z.id===fpy.dataset.fpay));return}
@@ -874,6 +851,8 @@ $('#app').addEventListener('click',async e=>{
   const md=T.closest('[data-fmode]');if(md){setMode(md.dataset.fmode);return}
   if(T.id==='fin_clip'){finClipImport();return}
   if(T.id==='fin_copyurl'){copy(S.settings.gasUrl||'','URL copied');return}
+  if(T.id==='fin_copyrpc'){copy(RPC_URL,'URL copied');return}
+  if(T.id==='fin_copyapi'){copy(API_KEY,'apikey copied');return}
   if(T.id==='fin_copyid'){copy(getUserKey(),'Key copied');return}
   if(T.closest('#fin_install')){try{navigator.clipboard.writeText(getUserKey())}catch(_){}flash('Your ID is copied — paste it when Shortcuts asks');return}
   if(T.id==='fin_reset'){
@@ -903,9 +882,9 @@ $('#app').addEventListener('click',async e=>{
       const d=await NorieAccount.diag(),b=document.getElementById('st_fin');
       let m,ok=false;
       if(!d.signedIn)m='✗ Not signed in. The app can’t receive anything until you sign in (Settings → Account).';
-      else if(d.keyOk===false)m='✗ Signed in as '+d.email+', but the server does not accept your key ('+(d.err||'bad key')+'). Use Settings → Account → More → Copy shortcut key, and paste exactly that into p_secret in “Norie send queue global”.';
+      else if(d.keyOk===false)m='✗ Signed in as '+d.email+', but the server does not accept your key ('+(d.err||'bad key')+'). Use Settings → Account → More → Copy shortcut key, and paste exactly that into p_secret in your “Norie SMS” shortcut.';
       else if(d.keyOk===null)m='✗ Could not reach the server — check your internet.';
-      else{ok=true;await finPull(true);m='✓ Signed in as '+d.email+'. Key ends …'+d.keyTail+' (the p_secret in your shortcut must end the same way). '+(d.pending?d.pending+' message(s) were waiting and have been fetched.':'Inbox is empty: nothing has reached your account yet. If your shortcut just ran, its upload failed — open “Norie send queue global”, tap ▶ and read the result.');}
+      else{ok=true;await finPull(true);m='✓ Signed in as '+d.email+'. Key ends …'+d.keyTail+' (the p_secret in your shortcut must end the same way). '+(d.pending?d.pending+' message(s) were waiting and have been fetched.':'Inbox is empty: nothing has reached your account yet. If your shortcut just ran, its upload failed — open your “Norie SMS” shortcut, tap ▶ and read the result.');}
       out.textContent=m;if(b){b.textContent=ok?'Ready ✓':'Fix needed';b.className='stb '+(ok?'ok':'no')}
       return;
     }
