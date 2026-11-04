@@ -8,10 +8,11 @@
 const BANKS={
   telebirr:{n:'telebirr',s:/tele\s?birr|^\+?(?:251)?127$/i,t:/tele\s?birr|ethio\s*telecom/i},
   cbe:{n:'CBE',s:/\bcbe\b|commercial\s*bank/i,t:/\bcbe|commercial\s*bank|combanketh/i},
-  awash:{n:'Awash',s:/awash/i,t:/awash/i}
+  awash:{n:'Awash',s:/awash/i,t:/awash/i},
+  abyssinia:{n:'Abyssinia',l:'B',s:/abyssinia|\bboa\b|bank\s*of\s*abyssinia/i,t:/abyssinia|\bBoA\b/i}
 };
 /* any other bank = rejected, so only CBE / Awash / telebirr ever get in */
-const OTHER=/dashen|abyssinia|zemen|wegagen|hibret|\bnib\b|oromia|cooperative|\bcoop\b|bunna|enat\s*bank|berhan|lion\s*bank|amhara\s*bank|siinqee|zamzam|hijra|global\s*bank|addis\s*bank|ahadu|gadaa|tsehay|shabelle|rammis|safaricom|m-?pesa/i;
+const OTHER=/dashen|zemen|wegagen|hibret|\bnib\b|oromia|cooperative|\bcoop\b|bunna|enat\s*bank|berhan|lion\s*bank|amhara\s*bank|siinqee|zamzam|hijra|global\s*bank|addis\s*bank|ahadu|gadaa|tsehay|shabelle|rammis|safaricom|m-?pesa/i;
 const num=s=>parseFloat(String(s).replace(/,/g,''));
 function bankOf(from,text){
   const fr=String(from||'').trim(),tx=String(text||'');
@@ -20,9 +21,10 @@ function bankOf(from,text){
   /* each bank's own signature wins (an Awash message can mention "Commercial Bank of Ethiopia" as the sender of the money) */
   if(/banking with cbe|cbe\.com\.et|mbreciept/i.test(tx))return 'cbe';
   if(/awash[_ ]?bank|awashbank|call 8980/i.test(tx))return 'awash';
+  if(/bank\s*of\s*abyssinia|bankofabyssinia|abyssiniabank|\bBoA\b/.test(tx))return 'abyssinia';
   /* a bank named after "from / to / via" is the OTHER side of a transfer (telebirr -> CBE), not the bank that sent this SMS */
   const mine=k=>{const re=new RegExp(BANKS[k].t.source,'gi');let m;while((m=re.exec(tx))){if(!/\b(?:from|to|via|through|into|with)\s+(?:your\s+|my\s+|the\s+)?(?:own\s+)?$/i.test(tx.slice(Math.max(0,m.index-16),m.index)))return m.index}return -1};
-  const hasOwn=['telebirr','cbe','awash'].filter(k=>mine(k)>=0);
+  const hasOwn=['telebirr','cbe','awash','abyssinia'].filter(k=>mine(k)>=0);
   if(hasOwn.length===1)return hasOwn[0];
   if(!hasOwn.length&&/\bacc(?:oun)?t\s*(?:no\.?\s*)?:?\s*\d\*{2,}\d+|\b1\*{3,}\d{3,}/i.test(tx))return 'cbe';
   if(/telebirr|ethio\s*telecom/i.test(tx)&&hasOwn.indexOf('telebirr')>=0)return 'telebirr';
@@ -86,7 +88,7 @@ function why(raw,from){
 /*PARSE_END*/
 
 /* automatic messages are accepted ONLY when the sender is CBE, 127 (telebirr) or Awash Bank — a friend's number is always rejected */
-const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:251)?127$|cbe|commercial\s*bank|awash/i.test(fr)};
+const SENDER_OK=fr=>{fr=String(fr||'').trim();return !fr||/tele\s?birr|^\+?(?:251)?127$|cbe|commercial\s*bank|awash|abyssinia|\bboa\b/i.test(fr)};
 
 /* ===== EDIT THESE TWO LINES ONCE (then upload finance.js) =====
    NORIE_CLOUD_URL : your Apps Script Web App URL (…/exec). Every user shares it, so nobody ever sees Apps Script.
@@ -194,7 +196,7 @@ mergeStates=function(a,b){
 };
 
 /* ---------- helpers ---------- */
-let mode='home'; /* home | banks | advice | telebirr | cbe | awash */
+let mode='home'; /* home | banks | advice | telebirr | cbe | awash | abyssinia */
 let dirF='all';  /* all | in | out (inside a bank) */
 let lastRec=[];
 let hide=true,hideT=null;
@@ -286,7 +288,7 @@ function cardsHTML(){
   const f=F();
   return Object.keys(BANKS).map(k=>{
     const l=f.tx.filter(t=>t.bank===k),s=stats(l),b=latestBal(l);
-    return `<div class="fcard glass" data-fgo="${k}"><div class="fbadge b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</div>
+    return `<div class="fcard glass" data-fgo="${k}"><div class="fbadge b-${k}">${esc((BANKS[k].l||BANKS[k].n[0]).toUpperCase())}</div>
     <div class="fci"><div class="fcn">${BANKS[k].n}</div><div class="fcs">${l.length} transaction${l.length===1?'':'s'}${l[0]?' · last '+dayLabel(l[0].ts):''}</div>
     <div class="fcm"><span class="pos">${M('+'+ETB(s.i))}</span><span class="neg">${M('−'+ETB(s.o))}</span><i>this month</i></div></div>
     <div class="fcb"><small>Balance</small><b>${b==null?'—':M(ETB(b))}</b></div></div>`;
@@ -547,12 +549,12 @@ function finWhatIf(){
 function vHome(){
   const f=F(),B=banksBal(),s=stats(f.tx);
   const empty=!f.tx.length;
-  return `<h1>${ic('dollar',26)}Finance</h1><p class="sub">${empty?'telebirr · CBE · Awash':B.n+' of 3 banks · '+f.tx.length+' transactions'}</p>
+  return `<h1>${ic('dollar',26)}Finance</h1><p class="sub">${empty?'telebirr · CBE · Awash · Abyssinia':B.n+' of 4 banks · '+f.tx.length+' transactions'}</p>
   <div class="fmaster" data-fgo="banks" role="button" aria-label="Open banks">
     <div class="fmtop"><div class="fmt">Total balance</div><button class="feye" data-feye aria-label="Show or hide balance">${ic(hide?'eyeOff':'eye',18)}</button></div>
     <div class="fmb"><small>ETB</small>${B.n?(hide?DOTS:ETB(B.tot)):'—'}</div>
     <div class="fmr"><span>${ic('arrowDown',13)}${hide?'•••':'+'+ETB(s.i)}</span><span>${ic('arrowUp',13)}${hide?'•••':'−'+ETB(s.o)}</span><i>this month</i></div>
-    <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc(BANKS[k].n[0].toUpperCase())}</i>`).join('')}</div></div>
+    <div class="fmf"><div class="fmh">Tap to open your banks</div><div class="fmd">${Object.keys(BANKS).map(k=>`<i class="fdot b-${k}">${esc((BANKS[k].l||BANKS[k].n[0]).toUpperCase())}</i>`).join('')}</div></div>
   </div>
   <div class="fact">${isAuto()?`<button class="chip" data-ffetch>${ic('save',14)}Fetch new SMS</button>`:`<button class="chip" data-frun>${ic('save',14)}Import new SMS</button>`}<button class="chip" data-fpaste>${ic('save',14)}Paste SMS</button>${skipGet().length?`<button class="chip" data-fskip>Skipped (${skipGet().length})</button>`:''}</div>
   ${empty?`<p class="fcap" style="text-align:center">No messages yet — paste your bank SMS, or <a href="#" data-fsetup>set up automatic capture</a>.</p>`:''}
@@ -639,7 +641,7 @@ async function finPull(manual){
     if(!r||r.status==='error'||!Array.isArray(r.items)){stSet('old');return 0}
     stSet('ok');
     if(!r.items.length)return 0;
-    r.items.filter(x=>!SENDER_OK(x.from)).forEach(x=>skipAdd('Sender “'+x.from+'” is not CBE / 127 / Awash',x,0));
+    r.items.filter(x=>!SENDER_OK(x.from)).forEach(x=>skipAdd('Sender “'+x.from+'” is not CBE / 127 / Awash / Abyssinia',x,0));
     const n=ingest(r.items.filter(x=>SENDER_OK(x.from))).added;
     gasCall({action:'smsack',ids:r.items.map(x=>x.id)}).catch(()=>{});
     if(n){if(tab==='finance'&&!isTyping()&&!sheetOpen())render();flash('Finance: '+n+' new transaction'+(n>1?'s':''))}
@@ -670,7 +672,7 @@ function finAsk(pre){
   o=document.createElement('div');o.id='finask';
   o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
   o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(420px,100%)"><b style="font-size:18px">Import bank SMS</b>
-  <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank and telebirr are accepted — the bank name or its link (e.g. awashbank) anywhere in the message is enough. If a message has neither, pick the bank below.</div>
+  <div class="hint" style="margin:4px 0 0">Only CBE, Awash Bank, Abyssinia Bank and telebirr are accepted — the bank name or its link (e.g. awashbank) anywhere in the message is enough. If a message has neither, pick the bank below.</div>
   <textarea id="fa_t" style="margin-top:12px;min-height:140px" placeholder="Paste one message or your whole history. Put a blank line between messages.">${esc(pre||'')}</textarea>
   <label>Bank</label><select id="fa_b"><option value="">Auto-detect</option>${Object.keys(BANKS).map(k=>`<option value="${BANKS[k].n}">${BANKS[k].n}</option>`).join('')}</select>
   <div class="btns" style="margin-top:14px"><button class="btn small" id="fa_c">Cancel</button><button class="btn main small" id="fa_o">Import</button></div></div>`;
@@ -720,7 +722,7 @@ async function finClipImport(){
   const all=qParse(t),items=all.filter(x=>SENDER_OK(x.from));
   if(!items.length){
     const bad=[...new Set(all.map(x=>x.from||'(no sender)'))].slice(0,3).join(', ');
-    flash(!t.trim()?'The clipboard is empty — Norie Read Queue did not copy anything':all.length?`Clipboard has ${all.length} message${all.length>1?'s':''} but none from CBE / 127 / Awash (senders: ${bad})`:`Clipboard has ${t.length} characters but no messages ending in #####`);
+    flash(!t.trim()?'The clipboard is empty — Norie Read Queue did not copy anything':all.length?`Clipboard has ${all.length} message${all.length>1?'s':''} but none from CBE / 127 / Awash / Abyssinia (senders: ${bad})`:`Clipboard has ${t.length} characters but no messages ending in #####`);
     finAsk(t);return;
   }
   finReport(ingest(items));
@@ -798,7 +800,7 @@ function setupHTML(){
   return `<details class="glass setrow" id="finsetup">
    <summary><b class="lb">${ic('dollar')}Finance &amp; sync mode</b><span class="stb ${badge[1]}" id="st_fin">${badge[0]}</span></summary>
    <div class="setwrap">
-     <p>Bank messages from <b>CBE, 127 (telebirr) and Awash Bank</b> only.</p>
+     <p>Bank messages from <b>CBE, 127 (telebirr), Awash Bank and Abyssinia Bank</b> only.</p>
      ${modeBar}
      ${auto?cloud:priv}
    </div>
@@ -977,7 +979,7 @@ css.textContent=`
 .fa{font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .fcard{display:flex;align-items:center;gap:13px;padding:15px 16px;margin-bottom:10px;cursor:pointer}
 .fbadge{flex:none;width:46px;height:46px;border-radius:15px;display:grid;place-items:center;font-weight:800;font-size:20px;color:#fff}
-.b-telebirr{background:linear-gradient(145deg,#ff9aab,var(--pink))}.b-cbe{background:linear-gradient(145deg,var(--gold2),var(--gold))}.b-awash{background:linear-gradient(145deg,#7fd1a8,#2f9e6a)}
+.b-telebirr{background:linear-gradient(145deg,#ff9aab,var(--pink))}.b-cbe{background:linear-gradient(145deg,var(--gold2),var(--gold))}.b-awash{background:linear-gradient(145deg,#7fd1a8,#2f9e6a)}.b-abyssinia{background:linear-gradient(145deg,#8fb8ff,#3f6fd8)}
 .fci{flex:1;min-width:0}.fcn{font-weight:800;font-size:17px}.fcs{font-size:12px;color:var(--muted);margin-top:2px}
 .fcm{font-size:12.5px;font-weight:700;margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.fcm i{font-style:normal;font-weight:500;color:var(--muted);font-size:11px}
 .fcb{text-align:right}.fcb small{display:block;font-size:10.5px;text-transform:uppercase;font-weight:700;color:var(--muted);letter-spacing:.6px}.fcb b{font-size:15px;font-variant-numeric:tabular-nums}
