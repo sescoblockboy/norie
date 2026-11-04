@@ -979,7 +979,7 @@ css.textContent=`
 .fa{font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .fcard{display:flex;align-items:center;gap:13px;padding:15px 16px;margin-bottom:10px;cursor:pointer}
 .fbadge{flex:none;width:46px;height:46px;border-radius:15px;display:grid;place-items:center;font-weight:800;font-size:20px;color:#fff}
-.b-telebirr{background:linear-gradient(145deg,#ff9aab,var(--pink))}.b-cbe{background:linear-gradient(145deg,var(--gold2),var(--gold))}.b-awash{background:linear-gradient(145deg,#7fd1a8,#2f9e6a)}.b-abyssinia{background:linear-gradient(145deg,#8fb8ff,#3f6fd8)}
+.b-telebirr{background:linear-gradient(145deg,#7fe0a0,#1f9d55)}.b-cbe{background:linear-gradient(145deg,#c39bff,#7b3fe4)}.b-awash{background:linear-gradient(145deg,#ffc27a,#f08a1c)}.b-abyssinia{background:linear-gradient(145deg,#ffe97a,#f2c200);color:#5a4500}
 .fci{flex:1;min-width:0}.fcn{font-weight:800;font-size:17px}.fcs{font-size:12px;color:var(--muted);margin-top:2px}
 .fcm{font-size:12.5px;font-weight:700;margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.fcm i{font-style:normal;font-weight:500;color:var(--muted);font-size:11px}
 .fcb{text-align:right}.fcb small{display:block;font-size:10.5px;text-transform:uppercase;font-weight:700;color:var(--muted);letter-spacing:.6px}.fcb b{font-size:15px;font-variant-numeric:tabular-nums}
