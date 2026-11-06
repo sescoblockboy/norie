@@ -201,15 +201,18 @@ function overlay(id,html){
 }
 function openSignIn(){
   const sa=isStandalone(),link=location.origin+'/?signin=1';
-  const o=overlay('sbsign',sa?`<b style="font-size:18px">Sign in to Norie</b>
-   <div class="hint" style="margin:6px 0 10px">Google only lets you sign in from <b>Safari</b>. It takes 3 quick steps:</div>
-   <div class="hint" style="margin:0 0 4px"><b>1.</b> Tap <b>Copy sign-in link</b>, open <b>Safari</b> and paste it in the address bar.</div>
-   <div class="btns" style="margin:6px 0 10px"><button class="btn main" id="sb_l" style="width:100%">Copy sign-in link</button></div>
-   <div class="hint" style="margin:0 0 4px"><b>2.</b> Sign in with Google, then tap <b>I use the Home Screen app</b>. That copies a one-time code.</div>
+  const trouble=`<details style="margin-top:14px"><summary style="font-size:13px;font-weight:700;color:var(--muted);cursor:pointer">Trouble signing in?</summary>
+   <div class="hint" style="margin:8px 0 4px"><b>1.</b> Tap <b>Copy sign-in link</b>, open <b>Safari</b> and paste it in the address bar.</div>
+   <div class="btns" style="margin:6px 0 10px"><button class="btn small" id="sb_l" style="width:100%">Copy sign-in link</button></div>
+   <div class="hint" style="margin:0 0 4px"><b>2.</b> Sign in with Google, then tap <b>I use the Home Screen app</b>. That copies a code.</div>
    <div class="hint" style="margin:0 0 4px"><b>3.</b> Come back here and tap <b>Paste &amp; sign in</b>:</div>
-   <div class="btns" style="margin:6px 0 0"><button class="btn" id="sb_p" style="width:100%">Paste &amp; sign in</button></div>
+   <div class="btns" style="margin:6px 0 0"><button class="btn small" id="sb_p" style="width:100%">Paste &amp; sign in</button></div>
    <input id="sb_c" placeholder="…or type the code here" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px">
-   <div class="btns" style="margin-top:12px"><button class="btn small" id="sb_x">Cancel</button><button class="btn main small" id="sb_o">Use code</button></div>`
+   <div class="btns" style="margin-top:8px"><button class="btn main small" id="sb_o">Use code</button></div></details>`;
+  const o=overlay('sbsign',sa?`<b style="font-size:18px">Sign in to Norie</b>
+   <div class="btns" style="margin:14px 0 0"><button class="btn main" id="sb_g" style="width:100%">Sign in with Google</button></div>
+   ${trouble}
+   <div class="btns" style="margin-top:12px"><button class="btn small" id="sb_x">Cancel</button></div>`
   :`<b style="font-size:18px">Sign in to Norie</b>
    <div class="hint" style="margin:6px 0 12px">Your tasks sync between devices, Telegram reminders keep working when the app is closed, and bank messages arrive by themselves. Only you can see your data.</div>
    <div class="btns" style="margin:0"><button class="btn main" id="sb_g" style="width:100%">Sign in with Google</button></div>
