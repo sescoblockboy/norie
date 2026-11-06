@@ -317,6 +317,9 @@ a{color:var(--pink)}
 #dtb .droomrow{margin-top:5px;padding-top:5px;border-top:1px solid rgba(160,120,100,.14);align-items:center;gap:8px;flex-wrap:nowrap}#dtb .droomrow .dt.sm{flex:none}#dtb .droomrow .draw-room-status{grid-column:auto;flex:1;min-width:0;padding:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .datebtn{flex:1;display:flex;align-items:center;gap:12px;border:0;background:rgba(255,255,255,.85);border-radius:18px;padding:9px 14px 9px 10px;font:inherit;cursor:pointer;box-shadow:0 2px 10px rgba(160,100,80,.1),inset 0 1px 0 #fff;text-align:left;min-width:0}.datebtn .dbt{flex:1;min-width:0;display:flex;flex-direction:column}.datebtn small{font-size:11px;color:var(--muted);font-weight:700}.datebtn #f_rl{font-size:15.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.datebtn .chev{color:var(--muted);font-size:13px;transition:transform .2s}.datebtn[aria-expanded=true] .chev{transform:rotate(180deg)}.datebtn[aria-expanded=true]{background:rgba(244,104,127,.12)}
 .calico{flex:none;width:42px;height:44px;border-radius:11px;background:#fff;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 6px rgba(0,0,0,.14);text-align:center}.calico b{display:block;background:var(--pink);color:#fff;font-size:10px;letter-spacing:.6px;line-height:15px}.calico i{font-style:normal;font-size:19px;font-weight:800;line-height:27px;color:var(--ink)}#f_row[aria-expanded=true]{background:rgba(244,104,127,.12);color:inherit}
+#sheet .big{font-size:17px!important;padding:10px 14px!important}#sheet .sh-top{margin-bottom:6px}#sheet .hint{font-size:11.5px;margin:4px 4px 0}.qwhen{margin-top:8px}.datebtn{padding:5px 12px 5px 7px;border-radius:15px;gap:10px}.calico{width:34px;height:36px;border-radius:9px}.calico b{font-size:8.5px;line-height:12px}.calico i{font-size:16px;line-height:24px}.datebtn small{font-size:10px}.datebtn #f_rl{font-size:14px}.qwhen .chip{min-height:34px;padding:0 12px;font-size:13px}
+#sheet .grp{margin-top:10px;padding:0}#sheet .grow{min-height:40px;padding:7px 14px}#sheet .grow>span{font-size:14.5px}#sheet .grow select{font-size:14.5px;padding:4px}#sheet #f_notes{height:38px!important;min-height:0!important;resize:none;font-size:14px;padding:8px 10px!important}#sheet .btns{margin-top:10px}#sheet .btn.main{padding:12px}
+.cal{margin-top:6px;padding:6px 8px}.cd{max-width:26px;font-size:12px}.cal-h{margin-bottom:0}.cal-w span{padding:1px 0}.cal-f{margin-top:5px}.cal-f .chip{padding:6px 9px;font-size:12.5px}.cal-f input[type=time]{padding:5px 6px;font-size:13.5px}
 </style>
 </head>
 <body>
@@ -335,7 +338,7 @@ const defaultState={
   updatedAt:0,
   lists:[{id:'personal',name:'Personal',e:'user'},{id:'work',name:'Work',e:'briefcase'},{id:'home',name:'Home',e:'home'},{id:'shop',name:'Shopping',e:'bag'},{id:'health',name:'Health',e:'activity'}],
   tasks:[],
-  settings:{tgToken:'',tgChat:'',gasUrl:'',nag:10,sound:true,name:'Yishak',greet:true,autoCal:true,robotPos:null,avatar:{type:'robot',photo:''}}
+  settings:{tgToken:'',tgChat:'',gasUrl:'',nag:10,sound:true,name:'',greet:true,autoCal:true,robotPos:null,avatar:{type:'robot',photo:''}}
 };
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))||structuredClone(defaultState)}catch(e){S=structuredClone(defaultState)}
