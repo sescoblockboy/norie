@@ -313,6 +313,7 @@ a{color:var(--pink)}
 .dchip{width:36px;height:36px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:13px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 .qwhen{display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap}.qwhen .chip{min-height:40px;padding:0 16px;font-size:14.5px;display:inline-flex;align-items:center;gap:6px}#f_row[aria-expanded=true]{background:var(--pink);color:#fff}#f_whenrow{margin:8px 4px 0}#f_whenrow .dv{font-size:15px;font-weight:700}#sheet details.more summary{font-size:13px;color:var(--muted);font-weight:700}
+#dtb .droomb{display:inline-flex;align-items:center;gap:6px;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--pink);background:rgba(244,104,127,.13);padding:6px 11px;border-radius:14px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(244,104,127,.25)}#dtb .droomb.on{background:linear-gradient(145deg,#ff9aab,var(--pink));color:#fff}#dtb .droomb i.draw-room-status{font-style:normal;font-size:0;display:inline-flex;padding:0;grid-column:auto}#dtb .droomb .rdot{margin:0;vertical-align:0;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
 #dtb .droomrow{margin-top:5px;padding-top:5px;border-top:1px solid rgba(160,120,100,.14);align-items:center;gap:8px;flex-wrap:nowrap}#dtb .droomrow .dt.sm{flex:none}#dtb .droomrow .draw-room-status{grid-column:auto;flex:1;min-width:0;padding:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
@@ -1174,7 +1175,7 @@ function openSheet(t){
   <div class="sh-top"><b>${t?'Edit task':'New task'}</b><button class="x" id="f_x">✕</button></div>
   <input id="f_title" class="big" value="${esc(draft.title)}" placeholder="What needs doing?" autocomplete="off">
   ${t?'':'<div class="hint">Try “gym tomorrow 6pm”</div>'}
-  <div class="qwhen"><button type="button" class="chip" data-cq="0">Today</button><button type="button" class="chip" data-cq="1">Tomorrow</button><button type="button" class="chip" id="f_row" aria-expanded="false">${ic('calendar',15)}Pick date</button></div>
+  <div class="qwhen"><button type="button" class="chip" id="f_row" aria-expanded="false">${ic('calendar',15)}Pick date</button></div>
   <div class="whenrow" id="f_whenrow"><span class="dv" id="f_sum"></span><button type="button" class="chip" id="f_clr">Remove</button><span id="f_cal" hidden></span></div>
   <div class="cal glass" id="f_calp" hidden></div>
   <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
@@ -2268,7 +2269,7 @@ function toolbar(){
  t.innerHTML=`<div class="dpanel">
   <div class="drow">${GROUPS.map(g=>g.map(tb).join('')).join('<i class="dsep"></i>')}</div>
   <div class="drow dsub"><div class="dcols">${COLS.map(c=>`<button class="sw2 ${col===c?'on':''}" data-col="${c}" style="background:${c}" aria-label="Color"></button>`).join('')}</div><i class="dsep"></i>${ab('undo','Undo','undo')}${ab('fit','Fit','fit')}${ab('more','More','more',moreOpen)}</div>
-  <div class="drow droomrow">${ab('room',roomCode?esc(roomCode):'Multiplayer room','users',!!roomCode)}<div id="drawRoomStatus" class="draw-room-status" role="status">${roomStatusHTML(roomStatus)}</div></div>
+  <div class="drow droomrow"><button class="droomb ${roomCode?'on':''}" data-a="room">${ic('users',14)}<span>${roomCode?esc(roomCode):'Multiplayer room'}</span><i id="drawRoomStatus" class="draw-room-status" role="status">${roomStatusHTML(roomStatus)}</i></button></div>
   <div class="dhint">${HINTS[tool]||''}${readOnly?' · See-only is ON':''}</div>
  </div>
  <div class="draw-more" ${moreOpen?'':'hidden'}>
