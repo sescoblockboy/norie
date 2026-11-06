@@ -100,7 +100,7 @@ const RPC_URL='https://medaaoiunclooqmmjrzq.supabase.co/rest/v1/rpc/sms_ingest',
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
-const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/eefe1b04f9fb4e94afad2910f6d1353f';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
+const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/2bf27151855449688d958798c1572ff2';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
 const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
    People who already have a cloud URL stay on Auto; everybody else starts on Private. */
@@ -836,7 +836,7 @@ function setupHTML(){
        ${st_('Add the two shortcuts (tap <b>Add Shortcut</b> in each).',btn(SHORTCUT_LINK_CAPTURE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Norie send queue global',1))}
        ${st_('Open <b>Norie send queue global</b> → ••• → <b>Get contents of URL</b>. Paste your key into <b>p_secret</b> (the only thing to fill in; <b>apikey</b> is already there).','<button class="btn small" id="fin_copyid">Copy my key</button>')}
        ${st_('Still in that shortcut, tap <b>▶</b> once. It creates your queue file and tests your key. If it shows an error, the key is wrong. Tap <b>Copy my key</b> again.')}
-       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.')}
+       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
        ${st_('Done. Tap <b>Check connection</b> below to test.')}
      </ol>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
