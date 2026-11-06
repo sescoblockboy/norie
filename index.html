@@ -312,6 +312,8 @@ a{color:var(--pink)}
 .lchip .ic{width:13px;height:13px;color:var(--gold)}
 .dchip{width:36px;height:36px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:13px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.qwhen{display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap}.qwhen .chip{min-height:40px;padding:0 16px;font-size:14.5px;display:inline-flex;align-items:center;gap:6px}#f_row[aria-expanded=true]{background:var(--pink);color:#fff}#f_whenrow{margin:8px 4px 0}#f_whenrow .dv{font-size:15px;font-weight:700}#sheet details.more summary{font-size:13px;color:var(--muted);font-weight:700}
+#dtb .droomrow{margin-top:5px;padding-top:5px;border-top:1px solid rgba(160,120,100,.14);align-items:center;gap:8px;flex-wrap:nowrap}#dtb .droomrow .dt.sm{flex:none}#dtb .droomrow .draw-room-status{grid-column:auto;flex:1;min-width:0;padding:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -1134,8 +1136,8 @@ function closeSheet(){$('#sheet').classList.remove('on');$('#shade').classList.r
 function sumUpdate(){
   const el=$('#f_sum');if(!el)return;
   if(draft.due){el.className='dv on';el.textContent=dayLabel(draft.due)+', '+fmtT(draft.due)}
-  else{el.className='dv ph';el.textContent='Today · '+new Date().toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})}
-  $('#f_clr').hidden=!draft.due;
+  else{el.className='dv ph';el.textContent=''}
+  $('#f_clr').hidden=!draft.due;{const w=$('#f_whenrow');if(w)w.hidden=!draft.due}
   $('#f_cal').textContent=draft.due?(hasCloud()?'Synced to your calendar':''):'No reminder yet';
 }
 let calY=0,calM=0;
@@ -1171,25 +1173,22 @@ function openSheet(t){
   $('#sheet').innerHTML=`<div class="grab"></div>
   <div class="sh-top"><b>${t?'Edit task':'New task'}</b><button class="x" id="f_x">✕</button></div>
   <input id="f_title" class="big" value="${esc(draft.title)}" placeholder="What needs doing?" autocomplete="off">
-  ${t?'':'<div class="hint">Try: “call mom tomorrow 5pm” or “gym in 30 min”</div>'}
-  <div class="sec">When</div>
-  <div class="card glass datebox" role="button" tabindex="0" id="f_row" aria-expanded="false"><span class="dl lb">${ic('calendar')}Date &amp; time</span><span><span class="dv" id="f_sum"></span><i class="chev">▾</i></span></div>
+  ${t?'':'<div class="hint">Try “gym tomorrow 6pm”</div>'}
+  <div class="qwhen"><button type="button" class="chip" data-cq="0">Today</button><button type="button" class="chip" data-cq="1">Tomorrow</button><button type="button" class="chip" id="f_row" aria-expanded="false">${ic('calendar',15)}Pick date</button></div>
+  <div class="whenrow" id="f_whenrow"><span class="dv" id="f_sum"></span><button type="button" class="chip" id="f_clr">Remove</button><span id="f_cal" hidden></span></div>
   <div class="cal glass" id="f_calp" hidden></div>
-  <div class="whenrow"><div class="calnote" id="f_cal"></div><button type="button" class="chip" id="f_clr">Remove</button></div>
-  <div class="card glass grp">
-    <div class="grow"><span class="lb">${ic('folder')}List</span><select id="f_list">${S.lists.map(l=>`<option value="${l.id}" ${draft.list===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
-    <div class="grow"><span class="lb">${ic('repeat')}Repeat</span><select id="f_rep">${['none','daily','weekly','monthly','yearly','days'].map(v=>`<option value="${v}" ${draft.repeat===v?'selected':''}>${v==='none'?'Never':v==='days'?'Custom days':v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
-    <div class="grow" id="f_wkrow" ${draft.repeat==='days'?'':'hidden'}><span class="lb">${ic('calendar')}Every</span><select id="f_wk">${[1,2,3,4].map(n=>`<option value="${n}" ${(draft.wk||1)===n?'selected':''}>${n===1?'Week':n+' weeks'}</option>`).join('')}</select></div>
-    <div class="grow" id="f_daysrow" ${draft.repeat==='days'?'':'hidden'}><div class="chips" style="margin:0;flex:1;justify-content:space-between">${['S','M','T','W','T','F','S'].map((n,i)=>`<button type="button" class="chip dchip ${(draft.days||[]).includes(i)?'on':''}" data-day="${i}">${n}</button>`).join('')}</div></div>
-    <div class="grow"><span class="lb">${ic('flag')}Important</span>${swHTML('f_imp',draft.prio>0)}</div>
-  </div>
-  <details class="more" ${(draft.notes||nagv!=='')?'open':''}><summary>More options</summary>
+  <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
+  <details class="more" ${(draft.notes||nagv!==''||t)?'open':''}><summary>More options</summary>
     <div class="card glass grp">
-      <label>Notes</label><textarea id="f_notes" placeholder="Optional details">${esc(draft.notes||'')}</textarea>
-      <label>Nag me every</label><select id="f_nag"><option value="" ${nagv===''?'selected':''}>Default</option>${[[0,'Once only'],[5,'5 min'],[10,'10 min'],[30,'30 min'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${nagv===v?'selected':''}>${n}</option>`).join('')}</select>
+      <div class="grow"><span class="lb">${ic('folder')}List</span><select id="f_list">${S.lists.map(l=>`<option value="${l.id}" ${draft.list===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
+      <div class="grow"><span class="lb">${ic('repeat')}Repeat</span><select id="f_rep">${['none','daily','weekly','monthly','yearly','days'].map(v=>`<option value="${v}" ${draft.repeat===v?'selected':''}>${v==='none'?'Never':v==='days'?'Custom days':v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
+      <div class="grow" id="f_wkrow" ${draft.repeat==='days'?'':'hidden'}><span class="lb">${ic('calendar')}Every</span><select id="f_wk">${[1,2,3,4].map(n=>`<option value="${n}" ${(draft.wk||1)===n?'selected':''}>${n===1?'Week':n+' weeks'}</option>`).join('')}</select></div>
+      <div class="grow" id="f_daysrow" ${draft.repeat==='days'?'':'hidden'}><div class="chips" style="margin:0;flex:1;justify-content:space-between">${['S','M','T','W','T','F','S'].map((n,i)=>`<button type="button" class="chip dchip ${(draft.days||[]).includes(i)?'on':''}" data-day="${i}">${n}</button>`).join('')}</div></div>
+      <div class="grow"><span class="lb">${ic('flag')}Important</span>${swHTML('f_imp',draft.prio>0)}</div>
+      <div class="grow"><span class="lb">Nag me</span><select id="f_nag"><option value="" ${nagv===''?'selected':''}>Default</option>${[[0,'Once only'],[5,'5 min'],[10,'10 min'],[30,'30 min'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${nagv===v?'selected':''}>${n}</option>`).join('')}</select></div>
+      <textarea id="f_notes" placeholder="Notes" style="margin:8px 14px 10px;width:calc(100% - 28px)">${esc(draft.notes||'')}</textarea>
     </div>
   </details>
-  <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
   ${t?`<div class="btns"><button class="btn small gold" id="f_ics">Calendar file (.ics)</button><button class="btn small danger" id="f_del">Delete</button></div>`:''}`;
   sumUpdate();
   NR.sheetT=performance.now();
@@ -1997,7 +1996,7 @@ function joinRoom(){
  let o=document.getElementById('droom');if(o)o.remove();
  o=document.createElement('div');o.id='droom';
  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
- o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(340px,100%)"><b style="font-size:18px">Live room</b>
+ o.innerHTML=`<div class="glass" style="background:#fffaf3;padding:18px;width:min(340px,100%)"><b style="font-size:18px">Multiplayer room</b>
  <div class="hint" style="margin:6px 0 0">One person taps Host. Everyone else taps Join with the same room name. When the host leaves, everyone automatically returns to their own drawing.</div>
  <input id="drn" style="margin-top:12px" autocomplete="off" autocapitalize="off" placeholder="room name">
  <div class="btns" style="margin-top:14px"><button class="btn main small" id="drh">Host</button><button class="btn gold small" id="drj">Join</button></div>
@@ -2269,11 +2268,12 @@ function toolbar(){
  t.innerHTML=`<div class="dpanel">
   <div class="drow">${GROUPS.map(g=>g.map(tb).join('')).join('<i class="dsep"></i>')}</div>
   <div class="drow dsub"><div class="dcols">${COLS.map(c=>`<button class="sw2 ${col===c?'on':''}" data-col="${c}" style="background:${c}" aria-label="Color"></button>`).join('')}</div><i class="dsep"></i>${ab('undo','Undo','undo')}${ab('fit','Fit','fit')}${ab('more','More','more',moreOpen)}</div>
+  <div class="drow droomrow">${ab('room',roomCode?esc(roomCode):'Multiplayer room','users',!!roomCode)}<div id="drawRoomStatus" class="draw-room-status" role="status">${roomStatusHTML(roomStatus)}</div></div>
   <div class="dhint">${HINTS[tool]||''}${readOnly?' · See-only is ON':''}</div>
  </div>
  <div class="draw-more" ${moreOpen?'':'hidden'}>
-  ${ab('rep','Report','list')}${ab('room',roomCode?esc(roomCode):'Live room','users',!!roomCode)}${ab('view',readOnly?'Exit see-only':'See only','eye',readOnly)}${ab('new','New','plus')}${ab('project','Save','save')}${ab('openproject','Projects','folder')}
-  <div id="drawRoomStatus" class="draw-room-status" role="status">${roomStatusHTML(roomStatus)}</div>
+  ${ab('rep','Report','list')}${ab('view',readOnly?'Exit see-only':'See only','eye',readOnly)}${ab('new','New','plus')}${ab('project','Save','save')}${ab('openproject','Projects','folder')}
+
  </div>`;
 }
 window.mountDraw=function(){
