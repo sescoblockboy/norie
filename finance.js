@@ -472,59 +472,80 @@ function advise(){
 
 /* ---------- 60 / 40 plan: 60% to spend (daily budget), 40% locked as backup ---------- */
 const pctGet=()=>{const v=+S.settings.finPct;return v>=10&&v<=100?Math.round(v):60};
-const planEnd=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).getTime()-1};   /* last moment of this month */
+const dKey=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const dParse=v=>{const m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(v||'');return m?new Date(+m[1],+m[2]-1,+m[3]).getTime():null};
+const monthEndDay=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,0).getTime()};
 const dLabel=t=>new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 function planInfo(A){
   const f=F(),B=A.B,now=Date.now(),t0=sod(now),pc=pctGet(),k=pc/100;
   const zero=!!(f.zero&&f.zero.on);
-  let p=!zero&&f.plan&&f.plan.end>now?f.plan:null;
-  const end=p?p.end:planEnd(),endDay=sod(end);
-  const base=p?p.total:(zero?0:(B.n?B.tot:null));
+  const base=zero?0:(B.n?B.tot:null);
   if(base==null||(!zero&&!(base>0)))return null;
-  const wiList=F().wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
-  const start=p?p.start:Math.max(mstart(),0),spendable=total*k,reserve=total*(1-k);
+  /* the days you picked (Plan window); default = today → end of this month */
+  let sd=dParse(S.settings.finStart),ed=dParse(S.settings.finEnd),ended=false;
+  if(ed==null||ed<t0){ended=ed!=null&&ed<t0;ed=monthEndDay();sd=null}
+  if(sd==null||sd>ed)sd=t0;
+  const endDay=sod(ed),startDay=sod(sd),started=t0>=startDay,eff=Math.max(t0,startDay);
+  const wiList=f.wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
   const out=(from,to)=>f.tx.filter(t=>t.dir==='out'&&!isX(t)&&t.ts>=from&&(to==null||t.ts<to)).reduce((a,t)=>a+t.amt,0);
-  const remaining=Math.max(0,spendable-(p?out(start):0));
-  const dleft=d=>Math.max(1,Math.round((endDay-d)/DAY)+1);          /* days left counting that day */
-  const daysLeft=dleft(t0);
-  const spentToday=zero?0:out(Math.max(t0,start));
-  const poolToday=remaining+spentToday,allow=poolToday/daysLeft;
-  /* per-day log, worked backwards: what you didn't spend rolls into the days after it */
+  const outSince=zero||!started?0:out(startDay);
+  const pool0=k*(base+outSince+wi),rem=pool0-outSince,remaining=Math.max(0,rem);
+  const dleft=d=>Math.max(1,Math.round((endDay-d)/DAY)+1);
+  const daysLeft=dleft(eff),days=dleft(startDay);
+  const spentToday=zero||!started?0:out(t0);
+  const poolToday=rem+spentToday,allow=Math.max(0,poolToday)/daysLeft;
   const rows=[];
-  if(!zero){let pool=poolToday;
-    for(let d=t0;d>=sod(start)&&rows.length<62;d-=DAY){
-      const sp=out(Math.max(d,start),d+DAY);
-      rows.push({d,plan:pool/dleft(d),spent:sp});
-      pool+=sp;
-    }
-  }
-  const tomorrow=daysLeft>1?remaining/(daysLeft-1):null;
+  if(!zero&&started){let pool=poolToday;
+    for(let d=t0;d>=startDay&&rows.length<62;d-=DAY){const sp=out(d,d+DAY);rows.push({d,plan:Math.max(0,pool)/dleft(d),spent:sp});pool+=sp}}
+  const tomorrow=started&&daysLeft>1?remaining/(daysLeft-1):null;
   const lasts=A.dailyOut>0?remaining/A.dailyOut:null;
-  return{zero,saved:!!p,at:p?p.start:null,pc,k,total,base,wi,wiList,spendable,reserve,remaining,daysLeft,end,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut,rows,tomorrow};
+  return{zero,pc,k,total,base,wi,wiList,spendable:pool0,reserve:(base+outSince+wi)*(1-k),remaining,daysLeft,days,startDay,endDay,started,ended,allow,spentToday,leftToday:allow-spentToday,lasts,pace:A.dailyOut,rows,tomorrow};
 }
 let wiOpen=false,logOpen=false;
 function planHTML(A){
   const P=planInfo(A),pc=pctGet();
-  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Spending plan</b><span class="fpill ok">${pc} / ${100-pc}</span></div>`;
-  if(!P)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Import your bank SMS to get your daily budget.</p></div>`;
-  const over=P.pace>P.allow&&P.pace>0;
-  const tip=P.pace>0?`<div class="tip ${over?'warn':'good'}"><i></i><span>${esc(MT(over?`Your usual ETB ${ETB0(P.pace)}/day is above budget — the ${pc}% lasts ${Math.floor(P.lasts)} day${Math.floor(P.lasts)===1?'':'s'}.`:`Your usual ETB ${ETB0(P.pace)}/day fits the budget.`))}</span></div>`:'';
-  const usedPct=Math.max(0,Math.min(100,Math.round((1-(P.spendable?P.remaining/P.spendable:0))*100)));
-  const pcs=[50,60,70,80].map(v=>`<button class="fq pc${pc===v?' on':''}" data-fpct="${v}">${v}</button>`).join('')+`<button class="fq pc${[50,60,70,80].includes(pc)?'':' on'}" data-fpct="0">${[50,60,70,80].includes(pc)?'…':pc}</button>`;
-  const logRows=P.rows.map((r,i)=>{const diff=r.plan-r.spent;return `<div class="fdr${i===0?' now':''}"><span>${i===0?'Today':dLabel(r.d)}</span><span>plan ${M(ETB0(r.plan))}</span><span class="${r.spent>r.plan+.5?'neg':''}">spent ${M(ETB0(r.spent))}</span><span class="${diff<0?'neg':'pos'}">${M((diff<0?'−':'+')+ETB0(Math.abs(diff)))}</span></div>`}).join('');
-  const wiLine=P.wi>0?` · +${M(ETB0(P.wi))}`:'';
+  const pill=`<button class="fpill ok fpp" data-fplanset aria-label="Plan settings">${pc} / ${100-pc}</button>`;
+  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Plan</b>${pill}</div>`;
+  if(!P)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Import your bank SMS first.</p></div>`;
+  const sub=P.started?`${esc(dLabel(P.startDay))} – ${esc(dLabel(P.endDay))} · ${P.daysLeft} day${P.daysLeft===1?'':'s'} left`:`Starts ${esc(dLabel(P.startDay))} · ${esc(dLabel(P.endDay))} · ${P.days} days`;
+  const usedPct=P.allow>0?Math.max(0,Math.min(100,Math.round(P.spentToday/P.allow*100))):(P.spentToday>0?100:0);
+  const logRows=P.rows.map((r,i)=>{const diff=r.plan-r.spent;return `<div class="fdr${i===0?' now':''}"><span>${i===0?'Today':dLabel(r.d)}</span><span>${M(ETB0(r.plan))}</span><span class="${r.spent>r.plan+.5?'neg':''}">${M(ETB0(r.spent))}</span><span class="${diff<0?'neg':'pos'}">${M((diff<0?'−':'+')+ETB0(Math.abs(diff)))}</span></div>`}).join('');
   return `<div class="fsub glass">${head}
-  <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>ETB per day · ${P.daysLeft} day${P.daysLeft===1?'':'s'} left · to ${esc(dLabel(P.end))}</small></div>
-  <div class="fsd">Today: spent <b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.spentToday))}</b> of ${M(ETB0(P.allow))}${P.tomorrow!=null?` · tomorrow <b>${M(ETB0(P.tomorrow))}</b>`:''}</div>
-  <div class="fspr"><div><small>Spend ${pc}%</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup ${100-pc}%</small><b class="pos">${M(ETB0(P.reserve))}</b></div><div><small>Left today</small><b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.leftToday))}</b></div></div>
-  <div class="fbar"><i style="width:${usedPct}%"></i></div>
-  <div class="fpcr"><small>Spend</small>${pcs}<small>%</small></div>
-  <p class="fcap" style="margin:6px 2px">${P.zero?`Starting from <b>0</b>${P.wi>0?` + ${M(ETB0(P.wi))} what-if = <b>${M(ETB0(P.total))}</b>`:' — add an amount to plan from scratch'}`:P.wi>0?`${M(ETB0(P.base))} balance + ${M(ETB0(P.wi))} extra = <b>${M(ETB0(P.total))}</b>`:`Balance ${M(ETB0(P.base))}`}${P.saved?' · locked '+esc(fmtD(P.at)):''}</p>
-  ${tip}
-  ${P.rows.length?`<details class="fdl"${logOpen?' open':''} data-flog><summary>Daily log</summary>${logRows}</details>`:''}
-  <div class="fwm"><button class="fwt" data-fwtog>${wiOpen?'▾':'▸'} What if I earn more?${wiLine}</button>${wiOpen?`<div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'From 0'}</button></div>`:''}
-    ${wiOpen&&P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div>
-  ${P.zero?'':`<div class="btns" style="margin:8px 0 2px"><button class="btn main small" data-fplan>${P.saved?'Re-lock':'Lock in this plan'}</button>${P.saved?'<button class="btn small" data-fplanx>Clear</button>':''}</div>`}</div>`;
+  <div class="fsbig"><b>${M(ETB0(P.allow))}</b><small>/ day</small></div>
+  <div class="fsd">${sub}</div>
+  ${P.started?`<div class="fbar"><i class="${P.leftToday<0?'over':''}" style="width:${usedPct}%"></i></div>
+  <div class="fsd2"><span>Today <b class="${P.leftToday<0?'neg':''}">${M(ETB0(P.spentToday))}</b> / ${M(ETB0(P.allow))}</span>${P.tomorrow!=null?`<span>Tomorrow <b>${M(ETB0(P.tomorrow))}</b></span>`:''}</div>`:''}
+  <div class="fspr two"><div><small>Spend</small><b>${M(ETB0(P.spendable))}</b></div><div><small>Backup</small><b class="pos">${M(ETB0(P.reserve))}</b></div></div>
+  ${P.rows.length?`<details class="fdl"${logOpen?' open':''} data-flog><summary>Days</summary>${logRows}</details>`:''}
+  <div class="fwm"><button class="fwt" data-fwtog>${wiOpen?'▾':'▸'} What if +${P.wi>0?' · '+M(ETB0(P.wi)):''}</button>${wiOpen?`<div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'From 0'}</button></div>`:''}
+    ${wiOpen&&P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div></div>`;
+}
+function finPlanAsk(){
+  let o=document.getElementById('finplan');if(o)o.remove();
+  const P=planInfo(advise()),now=sod(Date.now());
+  let pc=pctGet(),st=P?P.startDay:now,en=P?P.endDay:monthEndDay();
+  o=document.createElement('div');o.id='finplan';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(80,40,50,.35);display:grid;place-items:center;padding:20px';
+  const chips=()=>[50,60,70,80].map(v=>`<button class="fq pc${pc===v?' on':''}" data-pp="${v}">${v}</button>`).join('');
+  o.innerHTML=`<div class="glass fpw"><b style="font-size:18px">Plan</b>
+  <div class="fpl">Spend <span id="pp_b">${100-pc}% backup</span></div>
+  <div class="fpcr" id="pp_c">${chips()}<input id="pp_n" class="fpn" inputmode="numeric" placeholder="%" value="${[50,60,70,80].includes(pc)?'':pc}" maxlength="3"></div>
+  <div class="fpl">Days</div>
+  <div class="fpd"><input type="date" id="pp_s" value="${dKey(st)}"><span>→</span><input type="date" id="pp_e" value="${dKey(en)}"></div>
+  <div class="fpcr" style="margin-top:8px"><button class="fq pc" id="pp_m">This month</button></div>
+  <div class="btns" style="margin-top:14px"><button class="btn small" id="pp_x">Cancel</button><button class="btn main small" id="pp_ok">Start</button></div></div>`;
+  document.body.append(o);
+  const set=v=>{pc=v;o.querySelector('#pp_b').textContent=(100-pc)+'% backup';o.querySelector('#pp_c').querySelectorAll('[data-pp]').forEach(b=>b.classList.toggle('on',+b.dataset.pp===pc))};
+  o.addEventListener('click',e=>{if(e.target===o)o.remove();const b=e.target.closest('[data-pp]');if(b){o.querySelector('#pp_n').value='';set(+b.dataset.pp)}});
+  o.querySelector('#pp_n').oninput=e=>{const v=parseInt(e.target.value,10);if(v>=10&&v<=100)set(v)};
+  o.querySelector('#pp_m').onclick=()=>{o.querySelector('#pp_s').value=dKey(now);o.querySelector('#pp_e').value=dKey(monthEndDay())};
+  o.querySelector('#pp_x').onclick=()=>o.remove();
+  o.querySelector('#pp_ok').onclick=()=>{
+    const s1=dParse(o.querySelector('#pp_s').value),e1=dParse(o.querySelector('#pp_e').value);
+    if(s1==null||e1==null||e1<s1){flash('End must be after start');return}
+    if(e1<now){flash('End day is already past');return}
+    S.settings.finPct=pc;S.settings.finStart=dKey(s1);S.settings.finEnd=dKey(e1);save();o.remove();render();
+  };
 }
 
 function finWhatIf(){
@@ -851,7 +872,7 @@ $('#app').addEventListener('click',async e=>{
   const keep=fn=>{const y=scrollY;fn();render();scrollTo(0,y)};
   if(T.closest('[data-fwi]')){finWhatIf();return}
   if(T.closest('[data-fwtog]')){keep(()=>{wiOpen=!wiOpen});return}
-  const fpc=T.closest('[data-fpct]');if(fpc){let v=+fpc.dataset.fpct;if(!v){const r=prompt('Percent of your money to spend (10–100). The rest is kept as backup.',String(pctGet()));if(r==null)return;v=Math.round(parseFloat(r))}if(!(v>=10&&v<=100)){flash('Choose a number from 10 to 100');return}keep(()=>{S.settings.finPct=v;save()});return}
+  if(T.closest('[data-fplanset]')){finPlanAsk();return}
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
@@ -863,8 +884,6 @@ $('#app').addEventListener('click',async e=>{
   const fsb=T.closest('[data-fsub]');if(fsb){const id=fsb.dataset.fsub;keep(()=>{selSub=selSub===id?null:id});return}
   if(T.closest('[data-fsuball]')){keep(()=>{selSub=null});return}
   if(T.closest('[data-fsubedit]')){const x=F().subs.find(z=>z.id===selSub);if(x)finSubAsk(x);return}
-  if(T.closest('[data-fplan]')){const B=banksBal();if(!B.n||!(B.tot>0)){flash('No balance yet — import your bank SMS first');return}keep(()=>{F().plan={start:Date.now(),total:B.tot,end:planEnd(),u:Date.now()};save()});flash('Plan saved — the rest is set aside as backup');return}
-  if(T.closest('[data-fplanx]')){keep(()=>{F().plan={cleared:1,end:0,u:Date.now()};save()});return}
   const fa=T.closest('[data-fadd]');
   if(fa){const r=lastRec[+fa.dataset.fadd];if(r){F().subs.push({id:'s'+uid(),name:String(r.name).slice(0,40),amt:r.amt,per:r.per,u:Date.now()});save();render();flash('Added to subscriptions')}return}
   if(T.closest('[data-frun]')){finRunLocal();return}
@@ -982,6 +1001,8 @@ css.textContent=`
 .fday{margin-top:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.65)}.fdh{display:flex;justify-content:space-between;align-items:baseline}.fdh b{font-size:15px}.fdh span{font-size:12px;color:var(--muted);font-weight:600}
 .fspr.f4 b{font-size:13.5px}.fspr.f4>div{padding-left:2px;padding-right:2px}
 .fpt{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:7px 6px;font-size:12px;align-items:center;margin:8px 0 6px}.fpt i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);text-align:right}.fpt span{color:var(--muted);font-weight:600;font-size:12px}.fpt b{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
+.fpp{border:0;cursor:pointer;font:inherit;font-weight:800;font-size:12.5px}.fsbig small{margin-left:4px}.fsd2{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin:6px 2px 8px}.fsd2 b{color:var(--ink)}.fsd2 b.neg{color:var(--neg,#d6455d)}.fbar i.over{background:#e0566c}.fspr.two{grid-template-columns:1fr 1fr}
+.fpw{background:#fffaf3;padding:18px;width:min(340px,100%)}.fpl{font-size:13px;font-weight:800;color:var(--muted);margin:12px 0 6px;display:flex;justify-content:space-between}.fpd{display:flex;align-items:center;gap:6px}.fpd input{flex:1;min-width:0;font:inherit;font-size:14px;padding:9px 8px;border-radius:12px;border:1px solid rgba(0,0,0,.1);background:#fff}.fpn{width:58px;font:inherit;font-size:13px;font-weight:700;text-align:center;border-radius:11px;border:1px solid rgba(0,0,0,.1);padding:6px;background:#fff}
 .fsd{font-size:12.5px;color:var(--muted);margin:-2px 2px 8px}.fsd b{color:var(--ink)}.fsd b.neg{color:var(--neg,#d6455d)}
 .fpcr{display:flex;align-items:center;gap:6px;margin:8px 0 2px}.fpcr small{color:var(--muted);font-size:12px;font-weight:700}.fq.pc{min-height:30px;flex:none;padding:0 11px;font-size:12.5px;border-radius:11px}.fq.pc.on{background:var(--pink);color:#fff}
 .fdl{margin:8px 0 4px;border-radius:14px;background:rgba(255,255,255,.6);padding:4px 10px}.fdl summary{font-size:13px;font-weight:800;cursor:pointer;padding:6px 0;list-style:none}.fdl summary::-webkit-details-marker{display:none}
