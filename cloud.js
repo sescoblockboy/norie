@@ -100,7 +100,8 @@ gasCall=async function(body){
 /* ---------- sign in / out ---------- */
 async function finishLogin(session,source){
   ses=session;sv(ses);
-  try{const u=await raw('/auth/v1/user',{token:ses.access_token});if(u.ok&&u.json&&u.json.email){ses.email=u.json.email;sv(ses)}}catch(_){}
+  try{const u=await raw('/auth/v1/user',{token:ses.access_token});if(u.ok&&u.json&&u.json.email){ses.email=u.json.email;sv(ses);
+    if(!String(S.settings.name||'').trim()){const m=u.json.user_metadata||{},nm=String(m.full_name||m.name||u.json.email.split('@')[0]||'').trim().split(/\s+/)[0];if(nm)S.settings.name=nm.charAt(0).toUpperCase()+nm.slice(1)}}}catch(_){}
   let secret=null;
   try{secret=await rpc('norie_secret',{p_rotate:false})}catch(_){}
   const s=S.settings;
