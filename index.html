@@ -315,6 +315,8 @@ a{color:var(--pink)}
 .qwhen{display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap}.qwhen .chip{min-height:40px;padding:0 16px;font-size:14.5px;display:inline-flex;align-items:center;gap:6px}#f_row[aria-expanded=true]{background:var(--pink);color:#fff}#f_whenrow{margin:8px 4px 0}#f_whenrow .dv{font-size:15px;font-weight:700}#sheet details.more summary{font-size:13px;color:var(--muted);font-weight:700}
 #dtb .droomb{display:inline-flex;align-items:center;gap:6px;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--pink);background:rgba(244,104,127,.13);padding:6px 11px;border-radius:14px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(244,104,127,.25)}#dtb .droomb.on{background:linear-gradient(145deg,#ff9aab,var(--pink));color:#fff}#dtb .droomb i.draw-room-status{font-style:normal;font-size:0;display:inline-flex;padding:0;grid-column:auto}#dtb .droomb .rdot{margin:0;vertical-align:0;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
 #dtb .droomrow{margin-top:5px;padding-top:5px;border-top:1px solid rgba(160,120,100,.14);align-items:center;gap:8px;flex-wrap:nowrap}#dtb .droomrow .dt.sm{flex:none}#dtb .droomrow .draw-room-status{grid-column:auto;flex:1;min-width:0;padding:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.datebtn{flex:1;display:flex;align-items:center;gap:12px;border:0;background:rgba(255,255,255,.85);border-radius:18px;padding:9px 14px 9px 10px;font:inherit;cursor:pointer;box-shadow:0 2px 10px rgba(160,100,80,.1),inset 0 1px 0 #fff;text-align:left;min-width:0}.datebtn .dbt{flex:1;min-width:0;display:flex;flex-direction:column}.datebtn small{font-size:11px;color:var(--muted);font-weight:700}.datebtn #f_rl{font-size:15.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.datebtn .chev{color:var(--muted);font-size:13px;transition:transform .2s}.datebtn[aria-expanded=true] .chev{transform:rotate(180deg)}.datebtn[aria-expanded=true]{background:rgba(244,104,127,.12)}
+.calico{flex:none;width:42px;height:44px;border-radius:11px;background:#fff;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 6px rgba(0,0,0,.14);text-align:center}.calico b{display:block;background:var(--pink);color:#fff;font-size:10px;letter-spacing:.6px;line-height:15px}.calico i{font-style:normal;font-size:19px;font-weight:800;line-height:27px;color:var(--ink)}#f_row[aria-expanded=true]{background:rgba(244,104,127,.12);color:inherit}
 </style>
 </head>
 <body>
@@ -1136,6 +1138,9 @@ $('#shade').onclick=closeSheet;
 function closeSheet(){$('#sheet').classList.remove('on');$('#shade').classList.remove('on')}
 function sumUpdate(){
   const el=$('#f_sum');if(!el)return;
+  {const d=new Date(draft.due||Date.now()),rl=$('#f_rl');
+   if(rl)rl.textContent=draft.due?dayLabel(draft.due)+', '+fmtT(draft.due):'Pick date';
+   const mo=$('#f_mo'),dn=$('#f_dn');if(mo)mo.textContent=d.toLocaleDateString([], {month:'short'}).toUpperCase();if(dn)dn.textContent=d.getDate()}
   if(draft.due){el.className='dv on';el.textContent=dayLabel(draft.due)+', '+fmtT(draft.due)}
   else{el.className='dv ph';el.textContent=''}
   $('#f_clr').hidden=!draft.due;{const w=$('#f_whenrow');if(w)w.hidden=!draft.due}
@@ -1175,12 +1180,10 @@ function openSheet(t){
   <div class="sh-top"><b>${t?'Edit task':'New task'}</b><button class="x" id="f_x">✕</button></div>
   <input id="f_title" class="big" value="${esc(draft.title)}" placeholder="What needs doing?" autocomplete="off">
   ${t?'':'<div class="hint">Try “gym tomorrow 6pm”</div>'}
-  <div class="qwhen"><button type="button" class="chip" id="f_row" aria-expanded="false">${ic('calendar',15)}Pick date</button></div>
-  <div class="whenrow" id="f_whenrow"><span class="dv" id="f_sum"></span><button type="button" class="chip" id="f_clr">Remove</button><span id="f_cal" hidden></span></div>
+  <div class="qwhen"><button type="button" class="datebtn" id="f_row" aria-expanded="false"><span class="calico"><b id="f_mo"></b><i id="f_dn"></i></span><span class="dbt"><small>Date &amp; time</small><span id="f_rl">Pick date</span></span><span class="chev">▾</span></button><button type="button" class="chip" id="f_clr">Remove</button></div>
+  <span id="f_sum" hidden></span><span id="f_cal" hidden></span><span id="f_whenrow" hidden></span>
   <div class="cal glass" id="f_calp" hidden></div>
-  <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
-  <details class="more" ${(draft.notes||nagv!==''||t)?'open':''}><summary>More options</summary>
-    <div class="card glass grp">
+  <div class="card glass grp">
       <div class="grow"><span class="lb">${ic('folder')}List</span><select id="f_list">${S.lists.map(l=>`<option value="${l.id}" ${draft.list===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
       <div class="grow"><span class="lb">${ic('repeat')}Repeat</span><select id="f_rep">${['none','daily','weekly','monthly','yearly','days'].map(v=>`<option value="${v}" ${draft.repeat===v?'selected':''}>${v==='none'?'Never':v==='days'?'Custom days':v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
       <div class="grow" id="f_wkrow" ${draft.repeat==='days'?'':'hidden'}><span class="lb">${ic('calendar')}Every</span><select id="f_wk">${[1,2,3,4].map(n=>`<option value="${n}" ${(draft.wk||1)===n?'selected':''}>${n===1?'Week':n+' weeks'}</option>`).join('')}</select></div>
@@ -1188,8 +1191,8 @@ function openSheet(t){
       <div class="grow"><span class="lb">${ic('flag')}Important</span>${swHTML('f_imp',draft.prio>0)}</div>
       <div class="grow"><span class="lb">Nag me</span><select id="f_nag"><option value="" ${nagv===''?'selected':''}>Default</option>${[[0,'Once only'],[5,'5 min'],[10,'10 min'],[30,'30 min'],[60,'1 hour']].map(([v,n])=>`<option value="${v}" ${nagv===v?'selected':''}>${n}</option>`).join('')}</select></div>
       <textarea id="f_notes" placeholder="Notes" style="margin:8px 14px 10px;width:calc(100% - 28px)">${esc(draft.notes||'')}</textarea>
-    </div>
-  </details>
+  </div>
+  <div class="btns"><button class="btn main" id="f_save">${t?'Save':'Add task'}</button></div>
   ${t?`<div class="btns"><button class="btn small gold" id="f_ics">Calendar file (.ics)</button><button class="btn small danger" id="f_del">Delete</button></div>`:''}`;
   sumUpdate();
   NR.sheetT=performance.now();
