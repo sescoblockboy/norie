@@ -832,12 +832,10 @@ function setupHTML(){
   const cloud=`
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
-       ${st_('Sign in: Settings → <b>Account</b> (top of this page).')}
-       ${st_('Add the two shortcuts (tap <b>Add Shortcut</b> in each).',btn(SHORTCUT_LINK_CAPTURE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Norie send queue global',1))}
-       ${st_('Open <b>Norie send queue global</b> → ••• → <b>Get contents of URL</b>. Paste your key into <b>p_secret</b> (the only thing to fill in; <b>apikey</b> is already there).','<button class="btn small" id="fin_copyid">Copy my key</button>')}
-       ${st_('Still in that shortcut, tap <b>▶</b> once. It creates your queue file and tests your key. If it shows an error, the key is wrong. Tap <b>Copy my key</b> again.')}
-       ${st_('Shortcuts → <b>Automation</b> → <b>+</b> → <b>Message</b> → Message Contains <b>ETB</b> → <b>Run Immediately</b>. Add two <b>Run Shortcut</b> actions in this order: <b>Norie Bank SMS</b>, then <b>Norie send queue global</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
-       ${st_('Done. Tap <b>Check connection</b> below to test.')}
+       ${st_('Add both shortcuts.',btn(SHORTCUT_LINK_CAPTURE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Send queue',1))}
+       ${st_('In <b>Send queue</b>, paste your key into <b>p_secret</b>, then tap ▶ once.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Automation → <b>Message</b> contains <b>ETB</b> → Run Immediately → run <b>Norie Bank SMS</b>, then <b>Send queue</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
+       ${st_('Offline texts: another automation → <b>Wi-Fi</b> → Run Immediately → run <b>Send queue</b>.')}
      </ol>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
      <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
