@@ -790,6 +790,7 @@ async function sysNotify(title,body,tag){
 }
 async function sendTelegram(text){
   const {tgToken,tgChat}=S.settings;
+  if(!(tgToken&&tgChat)&&window.NorieAccount&&NorieAccount.tgLinked&&NorieAccount.tgLinked())return NorieAccount.tgSend(text);   /* shared Norie bot */
   if(!tgToken||!tgChat||!navigator.onLine)return false;
   try{
     const r=await fetch(`https://api.telegram.org/bot${encodeURIComponent(tgToken)}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:tgChat,text})});
