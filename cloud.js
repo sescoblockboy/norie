@@ -104,6 +104,29 @@ async function finishLogin(session,source){
     if(!String(S.settings.name||'').trim()){const m=u.json.user_metadata||{},nm=String(m.full_name||m.name||u.json.email.split('@')[0]||'').trim().split(/\s+/)[0];if(nm)S.settings.name=nm.charAt(0).toUpperCase()+nm.slice(1)}}}catch(_){}
   let secret=null;
   try{secret=await rpc('norie_secret',{p_rotate:false})}catch(_){}
+  /* second device: if this device already holds its own data and the account holds different data, ask how to combine */
+  try{
+    const r=await rpc('norie_load',{p_since:0});
+    const has=x=>!!x&&((x.tasks||[]).length>0||((x.fin&&x.fin.tx)||[]).length>0||(x.drawProjects||[]).length>0);
+    if(r&&r.status==='ok'&&r.payload&&has(r.payload)&&has(S)&&JSON.stringify([S.tasks,(S.fin||{}).tx])!==JSON.stringify([r.payload.tasks,(r.payload.fin||{}).tx])){
+      const pick=await new Promise(res=>{
+        const o=overlay('sbmerge',`<b style="font-size:18px">Use your account data?</b>
+         <div class="hint" style="margin:6px 0 12px">This device has older data of its own. Your account already has tasks and messages saved.</div>
+         <div class="btns" style="margin:0 0 10px"><button class="btn main" id="sm_a" style="width:100%">Use my account data</button></div>
+         <div class="btns" style="margin:0"><button class="btn" id="sm_m" style="width:100%">Merge both</button></div>`);
+        o.addEventListener('click',e=>{if(e.target===o)e.stopImmediatePropagation()},true);
+        o.querySelector('#sm_a').onclick=()=>{o.remove();res('account')};
+        o.querySelector('#sm_m').onclick=()=>{o.remove();res('merge')};
+      });
+      if(pick==='account'){
+        const keep={gasUrl:S.settings.gasUrl,gasUrlOld:S.settings.gasUrlOld,gasUrlKept:S.settings.gasUrlKept};
+        const rem=JSON.parse(JSON.stringify(r.payload));
+        Object.keys(S).forEach(k=>{delete S[k]});
+        Object.assign(S,rem);
+        S.settings=Object.assign({},defaultState.settings,rem.settings||{},keep);
+      }
+    }
+  }catch(_){}
   const s=S.settings;
   if(secret)s.syncId=secret;              /* the shortcut key = the account's secret key */
   if((s.gasUrl||'').trim()&&s.gasUrl!==SENT)s.gasUrlOld=s.gasUrl;
@@ -257,6 +280,18 @@ function showCode(){
 
 const _vs=vSettings;
 /* Settings order: Account, Profile, Telegram, Finance & sync mode, then the rest. Tidies the account-mode cards. */
+/* ---------- shared Telegram bot ---------- */
+let tgSt=null;   /* {bot, linked} from the server */
+async function tgInfo(){try{const j=await rpc('tg_info');if(j&&!j.error){tgSt=j}}catch(_){}return tgSt}
+async function tgSend(text){try{return !!(await rpc('tg_send',{p_text:String(text||'')}))}catch(_){return false}}
+const tgLinked=()=>!!(signedIn()&&tgSt&&tgSt.linked);
+function tgPaint(){
+  const b=document.getElementById('st_tg'),w=document.getElementById('tg_acct');if(!w)return;
+  const on=tgSt&&tgSt.linked;
+  if(b){b.className='stb '+(on?'ok':'');b.textContent=on?'Connected ✓':'Not connected'}
+  w.innerHTML=on?`<p>Reminders arrive in your Telegram chat.</p><div class="btns"><button class="btn small" id="tg_test">Send test</button><button class="btn small" id="tg_un">Disconnect</button></div>`
+   :(tgSt&&!tgSt.bot?`<p>The Norie bot is not set up yet.</p>`:`<p>Get your reminders in Telegram.</p><div class="btns"><button class="btn main" id="tg_conn" style="width:100%">Connect Telegram</button></div><div class="hint" style="margin-top:8px">Opens Telegram. Tap <b>Start</b>, then come back.</div>`);
+}
 function orderSettings(html){
   const box=document.createElement('div');box.innerHTML=html;
   const cards=[...box.children].filter(n=>n.matches&&n.matches('details.setrow'));
@@ -271,6 +306,11 @@ function orderSettings(html){
       const w=n.querySelector('.setwrap'),b=n.querySelector('summary .stb');
       if(b){b.id='st_cal_acct';b.className='stb';b.textContent='Not in account mode'}
       if(w)w.innerHTML='<p>Calendar alarms are not part of account sync yet. Your Telegram reminders still ring when Norie is closed.</p>';
+    }
+    if(k==='tg'&&on){
+      const w=n.querySelector('.setwrap'),old=w?w.innerHTML:'';
+      if(w){w.innerHTML='<div id="tg_acct"></div><details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Use my own bot instead</summary><div style="margin-top:8px">'+old+'</div></details>'}
+      setTimeout(()=>{tgPaint();tgInfo().then(tgPaint)},0);
     }
     if(k==='acct'&&!on)n.setAttribute('open','');
     n._k=k;
@@ -305,6 +345,17 @@ document.getElementById('app').addEventListener('click',async e=>{
   const T=e.target;
   if(T.id==='sb_in'){openSignIn();return}
   if(T.id==='sb_out'){if(confirm('Sign out on this phone? Your tasks stay here.'))await signOut();return}
+  if(T.id==='tg_conn'){
+    T.disabled=true;let j=null;try{j=await rpc('tg_code')}catch(_){}T.disabled=false;
+    if(!j||!j.code||!j.bot){flash('Could not start — try again');return}
+    const url='https://t.me/'+encodeURIComponent(j.bot)+'?start='+encodeURIComponent(j.code);
+    flash('Opening Telegram…');
+    /* the bot answers within a second or two; check again when the user comes back */
+    const chk=async()=>{await tgInfo();tgPaint();if(tgLinked())flash('Telegram connected ✓')};
+    document.addEventListener('visibilitychange',function f(){if(!document.hidden){document.removeEventListener('visibilitychange',f);setTimeout(chk,1200);setTimeout(chk,4000)}});
+    location.href=url;return}
+  if(T.id==='tg_test'){const ok=await tgSend('🔔 Norie here! This is a test reminder.');flash(ok?'Sent — check Telegram':'Could not send');return}
+  if(T.id==='tg_un'){try{await rpc('tg_unlink')}catch(_){}await tgInfo();tgPaint();flash('Disconnected');return}
   if(T.id==='sb_ck'){try{await navigator.clipboard.writeText(S.settings.syncId||'');flash('Shortcut key copied')}catch(_){flash('Copy failed')}return}
   if(T.id==='sb_cc'){showCode();return}
   if(T.id==='sb_wipe'){
@@ -323,6 +374,7 @@ async function diag(){
   try{const r=await api('/rest/v1/sms_inbox?select=id&limit=100');if(r.ok&&Array.isArray(r.json))d.pending=r.json.length}catch(_){}
   return d;
 }
-window.NorieAccount={signedIn,open:openSignIn,signOut,SENT,diag};
+window.NorieAccount={signedIn,open:openSignIn,signOut,SENT,diag,tgSend,tgLinked,tgInfo};
 window.__sb={ses:()=>ses,codeSignIn,finishLogin};
+if(signedIn())setTimeout(()=>{tgInfo()},2500);
 })();
