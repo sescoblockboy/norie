@@ -364,7 +364,8 @@ const isDirty=()=>{try{return localStorage.getItem(DIRTY)==='1'}catch(_){return 
 const getCloudAt=()=>{try{return +localStorage.getItem(CLOUDAT)||0}catch(_){return 0}};
 const setCloudAt=v=>{try{localStorage.setItem(CLOUDAT,String(v||0))}catch(_){}};
 let SNAP=new Map();
-const tkey=t=>{const r={...t};delete r.u;return JSON.stringify(r)};
+/* reminder bookkeeping (lastFired / fires / snooze) must not make a task look newer than a 'done' tapped on another device */
+const tkey=t=>{const r={...t};delete r.u;delete r.lastFired;delete r.fires;delete r.snooze;return JSON.stringify(r)};
 function snapAll(){SNAP=new Map();S.tasks.forEach(t=>SNAP.set(t.id,tkey(t)))}
 snapAll();
 function stampTasks(){
@@ -823,7 +824,7 @@ function fire(t){
 }
 let lastDay=sod(Date.now()),dayPending=false;
 function tick(){
-  const now=Date.now();let any=false;
+  const now=Date.now();let any=false,need=false;
   /* a new day began: tasks due today move from Upcoming into Today (re-render as soon as nothing is being edited) */
   if(sod(now)!==lastDay){lastDay=sod(now);dayPending=true}
   if(dayPending&&!isTyping()&&!sheetOpen()&&tab!=='draw'){dayPending=false;render()}
@@ -834,8 +835,13 @@ function tick(){
     if(t.snooze)next=t.snooze;
     else if(!t.lastFired||t.lastFired<t.due-1000)next=t.due;
     else next=nag>0?t.lastFired+nag*60000:Infinity;
-    if(now>=next){fire(t);any=true}
+    if(now>=next){
+      /* with an account: first check the cloud, in case this task was already finished on another device */
+      if(hasCloud()&&now-(window._lastPull||0)>15000){need=true;break}
+      fire(t);any=true
+    }
   }
+  if(need){window._lastPull=now;Promise.resolve().then(()=>loadFromGas()).catch(()=>{}).then(()=>setTimeout(tick,300));return}
   if(any&&!isTyping()&&tab!=='draw')render();
 }
 setInterval(tick,5000);
