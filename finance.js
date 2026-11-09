@@ -330,9 +330,11 @@ const fmtIn=v=>v==null||v===''?'':Number(v).toLocaleString('en-US',{maximumFract
 const PAYPER={week:['Weekly',52/12],biweek:['Every 2 weeks',26/12],month:['Monthly',1],year:['Yearly',1/12]};
 const payMo=p=>p.amt*(PAYPER[p.per]||PAYPER.month)[1];
 const payTot=()=>F().pay.reduce((a,p)=>a+payMo(p),0);
+let payOpen=(()=>{try{return localStorage.getItem('norie.fin.payopen')==='1'}catch(_){return false}})();
 function payCardHTML(A){
   const pay=F().pay,m=payTot(),sm=F().subs.reduce((a,s)=>a+perMo(s),0);
-  const head=`<div class="fsh"><b class="lb">${ic('dollar',16)}Payroll &amp; salary</b><button class="chip on" data-fpayadd>+ Add</button></div>`;
+  const head=`<div class="fsh"><button class="fwt" data-fpaytog style="font-size:inherit"><b class="lb">${payOpen?'▾':'▸'} ${ic('dollar',16)}Payroll &amp; salary</b></button>${!payOpen&&pay.length?`<span class="fcap" style="margin:0"><b class="pos">${M('+'+ETB0(m))}</b> / mo</span>`:''}<button class="chip on" data-fpayadd>+ Add</button></div>`;
+  if(!payOpen)return `<div class="fsub glass">${head}</div>`;
   if(!pay.length)return `<div class="fsub glass">${head}<p class="fcap" style="margin:6px 2px 2px">Add salary or regular pay to forecast 1 month, 6 months and 1 year.</p></div>`;
   const v=(x)=>`<b class="${x<0?'neg':''}">${M((x<0?'−':'')+ETB0(Math.abs(x)))}</b>`;
   const rows=[['Income',m],['After subscriptions',m-sm]];
@@ -637,9 +639,9 @@ function weekBars(){
   const f=F(),t0=sod(Date.now()),te=t0-weekOff*7*DAY,a=[];
   for(let i=6;i>=0;i--){const d0=te-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY&&!isX(t));a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
   const sel=(repDay!=null&&repDay>=te-6*DAY&&repDay<=te)?repDay:te;
-  const sum=l=>l.reduce((x,t)=>x+t.amt,0),mx=Math.max(1,...a.map(x=>sum(x.out)));
+  const sum=l=>l.reduce((x,t)=>x+t.amt,0),net=x=>sum(x.out)-sum(x.inn),mx=Math.max(1,...a.map(x=>Math.abs(net(x))));
   const cur=a.find(x=>x.d===sel)||a[6],tot=sum(cur.out),inn=sum(cur.inn);
-  const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i style="height:${Math.max(4,Math.round(sum(x.out)/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
+  const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i class="${net(x)<0?'g':''}" style="height:${Math.max(4,Math.round(Math.abs(net(x))/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
   const xs=f.tx.filter(t=>t.ts>=cur.d&&t.ts<cur.d+DAY&&t.dir==='out'&&isX(t)),items=cur.out.slice().sort((p,q)=>q.ts-p.ts).map(t=>`<div class="fsr" style="cursor:default"><div class="fm"><div class="ft">${esc(t.who||'Money out')}</div><div class="fs">${fmtT(t.ts)}</div></div><div class="fa neg">${M('−'+ETB(t.amt))}</div></div>`).join('');
   const detail=`<div class="fday"><div class="fdh"><b>${esc(dayLabel(cur.d))}</b><span>${new Date(cur.d).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span></div>
     <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div><div><small>Net</small><b class="${inn-tot<0?'neg':inn-tot>0?'pos':''}">${M((inn-tot<0?'−':inn-tot>0?'+':'')+ETB0(Math.abs(inn-tot)))}</b></div></div>
@@ -894,6 +896,7 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fplanset]')){finPlanAsk('pct');return}
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
+  if(T.closest('[data-fpaytog]')){payOpen=!payOpen;try{localStorage.setItem('norie.fin.payopen',payOpen?'1':'0')}catch(_){}const y=scrollY;render();scrollTo(0,y);return}
   const fwk=T.closest('[data-fwk]');if(fwk){const n=weekOff+(+fwk.dataset.fwk);if(n>=0&&n<=26){keep(()=>{weekOff=n;repDay=null})}return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
   const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
@@ -1009,7 +1012,7 @@ css.textContent=`
 .fwk{display:flex;align-items:flex-end;gap:6px;height:118px;margin:10px 0 0}
 .fwk button{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;border:0;background:none;padding:0;font:inherit;cursor:pointer;border-radius:12px}
 .fwk i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:rgba(244,104,127,.3)}
-.fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
+.fwk i.g{background:rgba(46,160,110,.3)}.fwk button.sel i.g{background:linear-gradient(180deg,#7fd6ab,#2ea06e)}.fwk button.sel{background:rgba(244,104,127,.1)}.fwk button.sel i{background:linear-gradient(180deg,#ff9aab,var(--pink))}
 .fwk small{font-size:10.5px;color:var(--muted);font-weight:600;line-height:1.25;text-align:center}.fwk small b{font-size:12.5px;color:var(--ink)}.fwk .td small b{color:var(--pink)}
 .fzc{border:0;border-radius:12px;padding:6px 11px;background:rgba(0,0,0,.07);color:var(--muted);font:inherit;font-weight:700;font-size:12px;cursor:pointer}.fzc.on{background:var(--pink);color:#fff}.fwc button{width:26px!important;height:26px!important}
 .fstl{list-style:none;padding:0;margin:10px 0;counter-reset:s}.fst{counter-increment:s;position:relative;display:flex;flex-direction:column;gap:8px;padding:10px 12px 10px 46px;margin-bottom:8px;border-radius:14px;background:rgba(255,255,255,.65);font-size:13.5px;line-height:1.45;color:var(--ink)}.fst::before{content:counter(s);position:absolute;left:12px;top:10px;width:24px;height:24px;border-radius:50%;background:var(--pink);color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center}.fstb{display:flex;flex-wrap:wrap;gap:8px}.fstb .btn{flex:1 1 auto;min-width:96px}
