@@ -497,18 +497,18 @@ function planInfo(A){
   const wiList=f.wi,wi=wiList.reduce((a,x)=>a+x.amt,0),total=base+wi;
   const inn=(from,to)=>f.tx.filter(t=>t.dir==='in'&&!isX(t)&&t.ts>=from&&(to==null||t.ts<to)).reduce((a,t)=>a+t.amt,0);
   const out=(from,to)=>f.tx.filter(t=>t.dir==='out'&&!isX(t)&&t.ts>=from&&(to==null||t.ts<to)).reduce((a,t)=>a+t.amt,0);
-  const outSince=zero||!started?0:out(startDay);
-  const pool0=k*(base+outSince+wi),rem=pool0-outSince,remaining=Math.max(0,rem);
+  /* simple split of what you have NOW: spend pool = k x total, backup = the rest; the daily number is the spend pool / days left */
+  const bal=base+wi,remaining=Math.max(0,k*bal),pool0=remaining;
   const dleft=d=>Math.max(1,Math.round((endDay-d)/DAY)+1);
   const daysLeft=dleft(eff),days=dleft(startDay);
   const spentToday=zero||!started?0:out(t0),netToday=zero||!started?0:spentToday-inn(t0,t0+DAY);
-  const poolToday=rem+spentToday,allow=Math.max(0,poolToday)/daysLeft;
+  const allow=remaining/daysLeft;   /* spend pool / days left, exactly as shown in the two boxes */
   const rows=[];
-  if(!zero&&started){let pool=poolToday;
-    for(let d=t0;d>=startDay&&rows.length<62;d-=DAY){const sp=out(d,d+DAY);rows.push({d,plan:Math.max(0,pool)/dleft(d),spent:sp-inn(d,d+DAY)});pool+=sp}}
+  if(!zero&&started){let cum=0;
+    for(let d=t0;d>=startDay&&rows.length<62;d-=DAY){const net=out(d,d+DAY)-inn(d,d+DAY);cum+=net;rows.push({d,plan:d===t0?allow:Math.max(0,k*(bal+cum))/dleft(d),spent:net})}}
   const tomorrow=started&&daysLeft>1?remaining/(daysLeft-1):null;
   const lasts=A.dailyOut>0?remaining/A.dailyOut:null;
-  return{zero,pc,k,total,base,wi,wiList,spendable:pool0,tot0:base+outSince+wi,outSince,reserve:(base+outSince+wi)*(1-k),remaining,daysLeft,days,startDay,endDay,started,ended,allow,spentToday,netToday,leftToday:allow-netToday,lasts,pace:A.dailyOut,rows,tomorrow};
+  return{zero,pc,k,total,base,wi,wiList,spendable:pool0,tot0:bal,reserve:bal*(1-k),remaining,daysLeft,days,startDay,endDay,started,ended,allow,spentToday,netToday,leftToday:allow-netToday,lasts,pace:A.dailyOut,rows,tomorrow};
 }
 let wiOpen=false,logOpen=false;
 function planHTML(A){
@@ -527,7 +527,7 @@ function planHTML(A){
   ${P.started?`<div class="fbar"><i class="${P.leftToday<0?'over':''}" style="width:${usedPct}%"></i></div>
   <div class="fsd2"><span>Today net <b class="${P.leftToday<0?'neg':''}">${M((P.netToday<0?'−':'')+ETB0(Math.abs(P.netToday)))}</b> / ${M(ETB0(P.allow))}</span>${P.tomorrow!=null?`<span>Tomorrow <b>${M(ETB0(P.tomorrow))}</b></span>`:''}</div>`:''}
   <div class="fspr two"><div><small>Spend left</small><b class="${P.remaining<=0?'neg':''}">${M(ETB0(P.remaining))}</b></div><div><small>Backup</small><b class="pos">${M(ETB0(P.reserve))}</b></div></div>
-  <div class="fcap" style="margin:6px 2px 0;font-size:11px">${P.pc}% of ${M(ETB0(P.tot0))} − ${M(ETB0(P.outSince))} spent</div>
+  <div class="fcap" style="margin:6px 2px 0;font-size:11px">${P.pc}% of ${M(ETB0(P.tot0))} · ${P.daysLeft} day${P.daysLeft===1?'':'s'}</div>
   <div class="fwm"><button class="fwt" data-fwtog>${wiOpen?'▾':'▸'} What if +${P.wi>0?' · '+M(ETB0(P.wi)):''}</button>${wiOpen?`<div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'From 0'}</button></div>`:''}
     ${wiOpen&&P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div></div>`;
 }
