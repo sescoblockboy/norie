@@ -834,10 +834,10 @@ function setupHTML(){
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
        ${st_('Tap Add. Your key is copied for you.',`<a class="btn main small" id="fin_install" href="${SHORTCUT_LINK_ONE}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Add Norie shortcut</a>`)}
-       ${st_('Open <b>Norie</b> and tap ▶ once. It reads your key by itself.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Open <b>Norie</b> and tap ▶ once. It reads your key by itself.')}
        ${st_('Automation → <b>Message</b> contains <b>ETB</b> → Run Immediately → run <b>Norie</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
-       ${st_('Optional, for offline texts: Automation → <b>Wi-Fi</b> → Run Immediately → run <b>Norie</b>.')}
      </ol>
+     <div class="hint" style="margin:6px 0 10px">Optional: Automation → <b>Wi-Fi</b> → Run Immediately → run <b>Norie</b>, to send texts that arrived offline sooner. <u id="fin_copyid" style="cursor:pointer;color:var(--pink)">Copy my key</u></div>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
      <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
      <div class="btns"><button class="btn main small" id="fin_check">Check connection</button><button class="btn small" data-fpaste>Paste an SMS</button>${(window.NorieAccount&&window.NorieAccount.signedIn())?'':'<button class="btn small danger" id="fin_reset">New sync ID</button>'}</div>
