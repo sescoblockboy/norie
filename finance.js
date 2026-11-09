@@ -508,7 +508,7 @@ function planInfo(A){
     for(let d=t0;d>=startDay&&rows.length<62;d-=DAY){const sp=out(d,d+DAY);rows.push({d,plan:Math.max(0,pool)/dleft(d),spent:sp-inn(d,d+DAY)});pool+=sp}}
   const tomorrow=started&&daysLeft>1?remaining/(daysLeft-1):null;
   const lasts=A.dailyOut>0?remaining/A.dailyOut:null;
-  return{zero,pc,k,total,base,wi,wiList,spendable:pool0,reserve:(base+outSince+wi)*(1-k),remaining,daysLeft,days,startDay,endDay,started,ended,allow,spentToday,netToday,leftToday:allow-netToday,lasts,pace:A.dailyOut,rows,tomorrow};
+  return{zero,pc,k,total,base,wi,wiList,spendable:pool0,tot0:base+outSince+wi,outSince,reserve:(base+outSince+wi)*(1-k),remaining,daysLeft,days,startDay,endDay,started,ended,allow,spentToday,netToday,leftToday:allow-netToday,lasts,pace:A.dailyOut,rows,tomorrow};
 }
 let wiOpen=false,logOpen=false;
 function planHTML(A){
@@ -527,6 +527,7 @@ function planHTML(A){
   ${P.started?`<div class="fbar"><i class="${P.leftToday<0?'over':''}" style="width:${usedPct}%"></i></div>
   <div class="fsd2"><span>Today net <b class="${P.leftToday<0?'neg':''}">${M((P.netToday<0?'−':'')+ETB0(Math.abs(P.netToday)))}</b> / ${M(ETB0(P.allow))}</span>${P.tomorrow!=null?`<span>Tomorrow <b>${M(ETB0(P.tomorrow))}</b></span>`:''}</div>`:''}
   <div class="fspr two"><div><small>Spend left</small><b class="${P.remaining<=0?'neg':''}">${M(ETB0(P.remaining))}</b></div><div><small>Backup</small><b class="pos">${M(ETB0(P.reserve))}</b></div></div>
+  <div class="fcap" style="margin:6px 2px 0;font-size:11px">${P.pc}% of ${M(ETB0(P.tot0))} − ${M(ETB0(P.outSince))} spent</div>
   <div class="fwm"><button class="fwt" data-fwtog>${wiOpen?'▾':'▸'} What if +${P.wi>0?' · '+M(ETB0(P.wi)):''}</button>${wiOpen?`<div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'From 0'}</button></div>`:''}
     ${wiOpen&&P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div></div>`;
 }
