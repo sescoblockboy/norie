@@ -100,7 +100,7 @@ const RPC_URL='https://medaaoiunclooqmmjrzq.supabase.co/rest/v1/rpc/sms_ingest',
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
-const SHORTCUT_LINK_ONE='https://www.icloud.com/shortcuts/ce6e715c35fc437b9971cd6032634b24';   /* ONE shortcut: queues a message if given one, then sends the queue */
+const SHORTCUT_LINK_ONE='https://www.icloud.com/shortcuts/0e9b3407a4bc444db29dfcedb6f0147b';   /* ONE shortcut: queues a message if given one, then sends the queue */
 const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/2bf27151855449688d958798c1572ff2';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
 const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
@@ -833,8 +833,8 @@ function setupHTML(){
   const cloud=`
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
-       ${st_('Add the shortcut.',btn(SHORTCUT_LINK_ONE,'Add Norie shortcut',1))}
-       ${st_('Open it, paste your key into <b>p_secret</b>, tap Done.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Tap Add. Your key is copied for you.',`<a class="btn main small" id="fin_install" href="${SHORTCUT_LINK_ONE}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Add Norie shortcut</a>`)}
+       ${st_('Open <b>Norie</b> and tap ▶ once. It reads your key by itself.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
        ${st_('Automation → <b>Message</b> contains <b>ETB</b> → Run Immediately → run <b>Norie</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
        ${st_('Optional, for offline texts: Automation → <b>Wi-Fi</b> → Run Immediately → run <b>Norie</b>.')}
      </ol>
@@ -901,7 +901,7 @@ $('#app').addEventListener('click',async e=>{
   if(T.id==='fin_copyrpc'){copy(RPC_URL,'URL copied');return}
   if(T.id==='fin_copyapi'){copy(API_KEY,'apikey copied');return}
   if(T.id==='fin_copyid'){copy(getUserKey(),'Key copied');return}
-  if(T.closest('#fin_install')){try{navigator.clipboard.writeText(getUserKey())}catch(_){}flash('Your ID is copied — paste it when Shortcuts asks');return}
+  if(T.closest('#fin_install')){try{navigator.clipboard.writeText(getUserKey())}catch(_){}flash('Key copied');return}
   if(T.id==='fin_reset'){
     if(!confirm('Make a brand-new private sync ID for this phone? Your tasks stay on this phone and are uploaded under the new ID. You will need to copy the setup code again.'))return;
     S.settings.syncId=newSyncId();save();render();
