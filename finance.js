@@ -234,6 +234,15 @@ async function toggleHide(){
     flash(e&&e.message==='unsupported'?'Face ID isn’t available here — open Norie from your Home Screen icon':'Face ID cancelled — amounts stay hidden');
   }
 }
+
+/* swipe the week chart right = earlier week, left = later week */
+(function(){let x0=null,y0=0;
+  document.addEventListener('touchstart',e=>{const t=e.touches[0];x0=e.target.closest&&e.target.closest('[data-fswipe]')?t.clientX:null;y0=t.clientY},{passive:true});
+  document.addEventListener('touchend',e=>{if(x0==null)return;const t=e.changedTouches[0],dx=t.clientX-x0,dy=t.clientY-y0;x0=null;
+    if(Math.abs(dx)<50||Math.abs(dy)>45)return;
+    const n=weekOff+(dx>0?1:-1);if(n<0||n>26)return;
+    const y=scrollY;weekOff=n;repDay=null;render();scrollTo(0,y)},{passive:true});
+})();
 let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){hiddenAt=Date.now();return}
@@ -527,7 +536,6 @@ function planHTML(A){
   ${P.started?`<div class="fbar"><i class="${P.leftToday<0?'over':''}" style="width:${usedPct}%"></i></div>
   <div class="fsd2"><span>Today net <b class="${P.leftToday<0?'neg':''}">${M((P.netToday<0?'−':'')+ETB0(Math.abs(P.netToday)))}</b> / ${M(ETB0(P.allow))}</span>${P.tomorrow!=null?`<span>Tomorrow <b>${M(ETB0(P.tomorrow))}</b></span>`:''}</div>`:''}
   <div class="fspr two"><div><small>Spend left</small><b class="${P.remaining<=0?'neg':''}">${M(ETB0(P.remaining))}</b></div><div><small>Backup</small><b class="pos">${M(ETB0(P.reserve))}</b></div></div>
-  <div class="fcap" style="margin:6px 2px 0;font-size:11px">${P.pc}% of ${M(ETB0(P.tot0))} · ${P.daysLeft} day${P.daysLeft===1?'':'s'}</div>
   <div class="fwm"><button class="fwt" data-fwtog>${wiOpen?'▾':'▸'} What if +${P.wi>0?' · '+M(ETB0(P.wi)):''}</button>${wiOpen?`<div class="fwq">${[5000,10000,20000].map(v=>`<button class="fq" data-fwq="${v}">+${ETB0(v)}</button>`).join('')}<button class="fq oth" data-fwi>Other</button><button class="fzc${P.zero?' on':''}" data-fzero>${P.zero?'From 0 ✓':'From 0'}</button></div>`:''}
     ${wiOpen&&P.wiList.length?`<div class="fwic">${P.wiList.map(x=>`<span class="fwc">+${M(ETB0(x.amt))}<button data-fwix="${x.id}" aria-label="Remove +${ETB0(x.amt)}">×</button></span>`).join('')}</div>`:''}</div></div>`;
 }
@@ -624,11 +632,11 @@ function vBank(k){
   ${listHTML(list)}`;
 }
 let advTab='plan';
-let repDay=null;
+let repDay=null,weekOff=0;
 function weekBars(){
-  const f=F(),t0=sod(Date.now()),a=[];
-  for(let i=6;i>=0;i--){const d0=t0-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY&&!isX(t));a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
-  const sel=(repDay!=null&&repDay>=t0-6*DAY&&repDay<=t0)?repDay:t0;
+  const f=F(),t0=sod(Date.now()),te=t0-weekOff*7*DAY,a=[];
+  for(let i=6;i>=0;i--){const d0=te-i*DAY,l=f.tx.filter(t=>t.ts>=d0&&t.ts<d0+DAY&&!isX(t));a.push({d:d0,out:l.filter(t=>t.dir==='out'),inn:l.filter(t=>t.dir==='in')})}
+  const sel=(repDay!=null&&repDay>=te-6*DAY&&repDay<=te)?repDay:te;
   const sum=l=>l.reduce((x,t)=>x+t.amt,0),mx=Math.max(1,...a.map(x=>sum(x.out)));
   const cur=a.find(x=>x.d===sel)||a[6],tot=sum(cur.out),inn=sum(cur.inn);
   const bars=`<div class="fwk">${a.map(x=>`<button class="${x.d===sel?'sel':''}${x.d===t0?' td':''}" data-fday="${x.d}" aria-label="${esc(dayLabel(x.d))}"><i style="height:${Math.max(4,Math.round(sum(x.out)/mx*100))}%"></i><small>${'SMTWTFS'[new Date(x.d).getDay()]}<br><b>${new Date(x.d).getDate()}</b></small></button>`).join('')}</div>`;
@@ -637,7 +645,7 @@ function weekBars(){
     <div class="fspr" style="margin-top:6px"><div><small>Spent</small><b class="${tot?'neg':''}">${M(ETB0(tot))}</b></div><div><small>Received</small><b class="${inn?'pos':''}">${M(ETB0(inn))}</b></div><div><small>Net</small><b class="${inn-tot<0?'neg':inn-tot>0?'pos':''}">${M((inn-tot<0?'−':inn-tot>0?'+':'')+ETB0(Math.abs(inn-tot)))}</b></div></div>
     <p class="fcap" style="margin:6px 2px 0">${inn-tot<0?`Net spent today: <b class="neg">${M(ETB(tot-inn))}</b>`:inn-tot>0?`Net gained: <b class="pos">${M(ETB(inn-tot))}</b>`:'Break-even'} · ${cur.out.length} payment${cur.out.length===1?'':'s'}</p>
     ${items?`<div class="fsl" style="margin-top:4px">${items}</div><div class="fdt"><span>Spent</span><b class="neg">${M('−'+ETB(tot))}</b></div>`:`<p class="fcap" style="margin:8px 2px 0">Nothing spent on this day.</p>`}${xs.length?`<p class="fcap" style="margin:6px 2px 0">Not counted: ${xs.length} own transfer${xs.length>1?'s':''} (${M(ETB0(xs.reduce((a,t)=>a+t.amt,0)))}) between your banks.</p>`:''}</div>`;
-  return bars+detail;
+  return `<div data-fswipe>${bars}${detail}</div>`;
 }
 function vAdvice(){
   const A=advise(),tabs=[['plan','Plan'],['report','Report'],['subs','Subscriptions']];
@@ -650,7 +658,7 @@ function vAdvice(){
     const top=A.top.length?`<h2>Top spending</h2><div class="card glass">${A.top.map(([n,v])=>`<div class="frow"><div class="fm"><div class="ft">${esc(n)}</div></div><div class="fa neg">${M('−'+ETB(v))}</div></div>`).join('')}</div>`:'';
     body=`<div class="fsub glass"><div class="fsh"><b class="lb">This month</b>${sr!=null?`<span class="fpill ${sr<10?'bad':'ok'}">Saving ${sr}%</span>`:''}</div>
     <div class="fspr" style="margin-top:2px"><div><small>Money in</small><b class="pos">${M(ETB0(A.got))}</b></div><div><small>Money out</small><b class="neg">${M(ETB0(A.spent))}</b></div><div><small>Net</small><b class="${net<0?'neg':'pos'}">${M((net<0?'−':'')+ETB0(Math.abs(net)))}</b></div></div></div>
-    <div class="fsub glass"><div class="fsh"><b class="lb">Last 7 days</b><small class="fcap" style="margin:0">tap a day</small></div>${weekBars()}
+    <div class="fsub glass"><div class="fsh"><b class="lb">${weekOff===0?'Last 7 days':dLabel(sod(Date.now())-weekOff*7*DAY-6*DAY)+' – '+dLabel(sod(Date.now())-weekOff*7*DAY)}</b><span class="fpg"><button class="fpill fpp" data-fwk="1" aria-label="Previous week">‹</button><button class="fpill fpp" data-fwk="-1" aria-label="Next week"${weekOff===0?' disabled style="opacity:.35"':''}>›</button></span></div>${weekBars()}
     ${A.endBal!=null?`<p class="fcap" style="margin:8px 2px 2px">Month-end balance at this pace: <b class="${A.endBal<0?'neg':''}">${M('ETB '+ETB0(A.endBal))}</b></p>`:''}</div>
     ${top}
     <div class="card glass" style="margin-top:12px">${A.tips.slice(0,3).map(t=>`<div class="tip ${t[0]}"><i></i><span>${esc(MT(t[1]))}</span></div>`).join('')}</div>`;
@@ -886,6 +894,7 @@ $('#app').addEventListener('click',async e=>{
   if(T.closest('[data-fplanset]')){finPlanAsk('pct');return}
   const fwx=T.closest('[data-fwix]');if(fwx){const f=F();f.del[fwx.dataset.fwix]=Date.now();f.wi=f.wi.filter(x=>x.id!==fwx.dataset.fwix);save();const y=scrollY;render();scrollTo(0,y);return}
   const fad=T.closest('[data-fadv]');if(fad){advTab=fad.dataset.fadv;render();scrollTo({top:0});return}
+  const fwk=T.closest('[data-fwk]');if(fwk){const n=weekOff+(+fwk.dataset.fwk);if(n>=0&&n<=26){keep(()=>{weekOff=n;repDay=null})}return}
   const fdy=T.closest('[data-fday]');if(fdy){keep(()=>{repDay=+fdy.dataset.fday});return}
   const fq=T.closest('[data-fwq]');if(fq){keep(()=>{F().wi.push({id:'w'+uid(),amt:+fq.dataset.fwq,u:Date.now()});save()});flash('Added +'+ETB0(+fq.dataset.fwq));return}
   if(T.closest('[data-ffetch]')){const b=T.closest('[data-ffetch]');b.disabled=true;const t0=Date.now();const n=await finPull(true);b.disabled=false;flash(n?'Got '+n+' new transaction'+(n>1?'s':''):'Up to date ✓ ('+((Date.now()-t0)/1000).toFixed(1)+'s)');return}
