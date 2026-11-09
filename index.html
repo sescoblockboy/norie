@@ -888,6 +888,7 @@ function complete(id){
     t.due=d.getTime();t.lastFired=null;t.fires=0;t.snooze=null;
   }else{t.done=!t.done;t.doneAt=t.done?now:null}
   save();render();
+  if(hasCloud()&&pushT){clearTimeout(pushT);pushT=null;syncToGas()}   /* tell the server NOW so Telegram stops */
   if(typeof norieCheer==='function'&&(t.done||isRep(t)))norieCheer();
 }
 const appURL=()=>location.href.split('#')[0];
