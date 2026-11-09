@@ -163,7 +163,10 @@ function ingest(items){
     p.id='f'+hsh(p.bank+'|'+String(it.text).replace(/\s+/g,' ').trim());
     p.ts=+it.ts||p.when||Date.now();delete p.when;
     if(have.has(p.id)){dup++;continue}
-    if(f.del[p.id]){dup++;skipAdd('You deleted this one earlier',it,0);continue}
+    if(f.del[p.id]){   /* deleted earlier: automatic fetches keep skipping it, but when YOU paste it or tap Add anyway it counts again */
+      if(it.force||it.manual)delete f.del[p.id];
+      else{dup++;skipAdd('You deleted this one earlier',it,1);continue}
+    }
     if(!it.force&&f.tx.some(t=>same(p,t))){dup++;skipAdd('Looks the same as an earlier transaction (same bank, type and amount, close in time)',it,1);continue}
     fixDir(p,f.tx);
     f.tx.push(p);have.add(p.id);added++;
@@ -731,7 +734,7 @@ function finAsk(pre){
     const q=/#{5}/.test(text)?qParse(text):null;
     const msgs=q?[]:splitMsgs(text,from);
     if(!msgs.length&&!q)return;
-    const r=ingest(q?q.map(m=>({from:from||m.from,text:m.text,ts:m.ts})):msgs.map(m=>({from,text:m})));
+    const r=ingest(q?q.map(m=>({from:from||m.from,text:m.text,ts:m.ts,manual:1})):msgs.map(m=>({from,text:m,manual:1})));
     o.remove();
     const bits=[];
     if(r.dup)bits.push(r.dup+' duplicate'+(r.dup>1?'s':'')+' skipped');
@@ -772,7 +775,7 @@ async function finClipImport(){
     flash(!t.trim()?'The clipboard is empty — Norie Read Queue did not copy anything':all.length?`Clipboard has ${all.length} message${all.length>1?'s':''} but none from CBE / 127 / Awash / Abyssinia (senders: ${bad})`:`Clipboard has ${t.length} characters but no messages ending in #####`);
     finAsk(t);return;
   }
-  finReport(ingest(items));
+  finReport(ingest(items.map(x=>({...x,manual:1}))));
 }
 function finRunLocal(){
   try{sessionStorage.setItem('finwait','1')}catch(_){}
