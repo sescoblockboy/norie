@@ -100,6 +100,7 @@ const RPC_URL='https://medaaoiunclooqmmjrzq.supabase.co/rest/v1/rpc/sms_ingest',
 const SHORTCUT_LINK_PRIVATE='https://www.icloud.com/shortcuts/796cf2b88df641a5973b2a029c804e43';
 const SHORTCUT_LINK_MAKE='https://www.icloud.com/shortcuts/f130f30c83f0476ab8bccabef351b5ed';   /* creates queue.txt once */   /* iCloud link: "Norie Bank SMS" that ONLY appends to queue.txt (no ID, no internet) */
 const READ_NAME='Norie Read Queue Global';   /* exact name of the Read Queue shortcut */
+const SHORTCUT_LINK_ONE='https://www.icloud.com/shortcuts/ce6e715c35fc437b9971cd6032634b24';   /* ONE shortcut: queues a message if given one, then sends the queue */
 const SHORTCUT_LINK_SEND='https://www.icloud.com/shortcuts/2bf27151855449688d958798c1572ff2';   /* "Norie send queue global": uploads queue.txt to the account (key NOT included) */
 const SHORTCUT_LINK_READ='https://www.icloud.com/shortcuts/f8169cda8318480f96860d342038ed58';      /* iCloud link: "Norie Read Queue" = Get File queue.txt -> Copy to Clipboard */
 /* MODE: Private = nothing leaves the phone (no cloud). Auto = the shared cloud (bank SMS + Telegram while the app is closed).
@@ -832,10 +833,10 @@ function setupHTML(){
   const cloud=`
      <p><b>Auto mode.</b> Bank messages and Telegram reminders keep working when Norie is closed.</p>
      <ol class="fstl">
-       ${st_('Add both shortcuts.',btn(SHORTCUT_LINK_CAPTURE,'Norie Bank SMS',1)+btn(SHORTCUT_LINK_SEND,'Send queue',1))}
-       ${st_('In <b>Send queue</b>, paste your key into <b>p_secret</b>, then tap ▶ once.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
-       ${st_('Automation → <b>Message</b> contains <b>ETB</b> → Run Immediately → run <b>Norie Bank SMS</b>, then <b>Send queue</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
-       ${st_('Offline texts: another automation → <b>Wi-Fi</b> → Run Immediately → run <b>Send queue</b>.')}
+       ${st_('Add the shortcut.',btn(SHORTCUT_LINK_ONE,'Add Norie shortcut',1))}
+       ${st_('Open it, paste your key into <b>p_secret</b>, tap Done.','<button class="btn small" id="fin_copyid">Copy my key</button>')}
+       ${st_('Automation → <b>Message</b> contains <b>ETB</b> → Run Immediately → run <b>Norie</b>.','<a class="btn small" href="shortcuts://" style="text-decoration:none;text-align:center">Open Shortcuts</a>')}
+       ${st_('Optional, for offline texts: Automation → <b>Wi-Fi</b> → Run Immediately → run <b>Norie</b>.')}
      </ol>
      <div class="hl" style="margin:8px 0 2px"><b>Fetch new SMS automatically</b></div>
      <select id="fin_every" class="inp" style="width:100%">${[[0,'Off — only when I tap Fetch'],[15,'Every 15 seconds'],[30,'Every 30 seconds'],[60,'Every 1 minute'],[120,'Every 2 minutes'],[300,'Every 5 minutes'],[600,'Every 10 minutes']].map(([v,n])=>`<option value="${v}"${everySec()===v?' selected':''}>${n}</option>`).join('')}</select>
