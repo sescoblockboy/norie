@@ -377,4 +377,17 @@ async function diag(){
 window.NorieAccount={signedIn,open:openSignIn,signOut,SENT,diag,tgSend,tgLinked,tgInfo};
 window.__sb={ses:()=>ses,codeSignIn,finishLogin};
 if(signedIn())setTimeout(()=>{tgInfo()},2500);
+/* leaving the app with an unsent change: push to the account cloud right away (the old beacon only knows the Apps Script URL) */
+const _fb=flushBeacon;
+flushBeacon=function(){
+  if((S.settings.gasUrl||'').trim()!==SENT)return _fb();
+  if(!pushT||!signedIn())return;
+  clearTimeout(pushT);pushT=null;
+  const body=JSON.stringify({p_state:S,p_updated:S.updatedAt||Date.now()});
+  if(body.length<60000&&ses&&ses.access_token&&(ses.expires_at||0)>Date.now()/1000+30){
+    try{fetch(SB_URL+'/rest/v1/rpc/norie_save',{method:'POST',keepalive:true,headers:{apikey:SB_KEY,Authorization:'Bearer '+ses.access_token,'Content-Type':'application/json'},body});return}catch(_){}
+  }
+  syncToGas();
+};
+
 })();
