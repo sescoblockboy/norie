@@ -65,7 +65,7 @@ gasCall=async function(body){
   switch(body&&body.action){
     case 'save':{
       const p=body.payload||{};
-      const r=await rpc('norie_save',{p_state:p,p_updated:p.updatedAt||Date.now()});
+      const r=await rpc('norie_save',{p_state:p,p_updated:p.updatedAt||Date.now(),p_base:+body.base||0});
       return Object.assign({},r,{cal:'Calendar sync is not on the account cloud yet — Telegram reminders work'});
     }
     case 'load':return rpc('norie_load',{p_since:body.since||0});
